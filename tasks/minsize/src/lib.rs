@@ -15,7 +15,9 @@ use rustc_hash::FxHashMap;
 
 use oxc_allocator::Allocator;
 use oxc_codegen::{Codegen, CodegenOptions};
-use oxc_minifier::{CompressOptions, MangleOptions, Minifier, MinifierOptions};
+use oxc_minifier::{
+    CompressOptions, MangleOptions, ManglePropertiesOptions, Minifier, MinifierOptions,
+};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
@@ -118,7 +120,7 @@ pub fn run() -> Result<(), io::Error> {
     let save_path = Path::new("./target/minifier").join(marker);
 
     for file in files.files() {
-        let (minified, iterations) = minify_twice(file, options);
+        let (minified, iterations) = minify_twice(file, options, false);
 
         fs::create_dir_all(&save_path).unwrap();
         fs::write(save_path.join(&file.file_name), &minified).unwrap();
@@ -137,6 +139,39 @@ pub fn run() -> Result<(), io::Error> {
         out.push_str(&s);
     }
 
+    // Keep opt-in property results separate from the default esbuild comparison.
+    if !options.compress_only {
+        out.push_str("\nwith property mangling (^_, mangleQuoted)\n");
+        writeln!(out, "{:width$} | {:width$} | {:width$} |", "", "Oxc", "Oxc", width = width)
+            .unwrap();
+        writeln!(
+            out,
+            "{:width$} | {:width$} | {:width$} | {:width$} | File",
+            "Original",
+            "minified",
+            "gzip",
+            "Iterations",
+            width = width,
+        )
+        .unwrap();
+        out.push_str(&str::repeat("-", width * 4 + fixture_width + 12));
+        out.push('\n');
+
+        for file in files.files() {
+            let (minified, iterations) = minify_twice(file, options, true);
+            let s = format!(
+                "{:width$} | {:width$} | {:width$} | {:width$} | {}\n\n",
+                format_size(file.source_text.len(), DECIMAL),
+                format_size(minified.len(), DECIMAL),
+                format_size(gzip_size(&minified), DECIMAL),
+                iterations,
+                file.file_name,
+                width = width
+            );
+            out.push_str(&s);
+        }
+    }
+
     println!("{out}");
 
     if !options.compress_only {
@@ -147,15 +182,21 @@ pub fn run() -> Result<(), io::Error> {
     Ok(())
 }
 
-fn minify_twice(file: &TestFile, options: Options) -> (String, u8) {
+fn minify_twice(file: &TestFile, options: Options, mangle_properties: bool) -> (String, u8) {
     let source_type = SourceType::cjs().with_script(true);
-    let (code1, iterations) = minify(&file.source_text, source_type, options);
-    let (code2, _) = minify(&code1, source_type, options);
+    let (code1, iterations) = minify(&file.source_text, source_type, options, mangle_properties);
+    // Property mangling runs once. Compression may expose new matching keys on the second pass.
+    let (code2, _) = minify(&code1, source_type, options, false);
     assert_eq_minified_code(&code1, &code2, &file.file_name);
     (code2, iterations)
 }
 
-fn minify(source_text: &str, source_type: SourceType, options: Options) -> (String, u8) {
+fn minify(
+    source_text: &str,
+    source_type: SourceType,
+    options: Options,
+    mangle_properties: bool,
+) -> (String, u8) {
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, source_text, source_type).parse();
     assert!(ret.diagnostics.is_empty());
@@ -168,6 +209,8 @@ fn minify(source_text: &str, source_type: SourceType, options: Options) -> (Stri
     .build(scoping, &mut program);
     let ret = Minifier::new(MinifierOptions {
         mangle: (!options.compress_only).then(MangleOptions::default),
+        mangle_properties: (mangle_properties && !options.compress_only)
+            .then(property_mangle_options),
         compress: Some(CompressOptions::default()),
     })
     .minify(&allocator, &mut program);
@@ -177,6 +220,12 @@ fn minify(source_text: &str, source_type: SourceType, options: Options) -> (Stri
         .build(&program)
         .code;
     (code, ret.iterations)
+}
+
+fn property_mangle_options() -> ManglePropertiesOptions {
+    let mut options = ManglePropertiesOptions::from_pattern("^_").expect("valid property regex");
+    options.mangle_quoted = true;
+    options
 }
 
 fn gzip_size(s: &str) -> usize {

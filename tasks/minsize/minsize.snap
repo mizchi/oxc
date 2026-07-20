@@ -25,3 +25,32 @@ Original   | minified   | minified   | gzip       | gzip       | Iterations | Fi
 
 10.95 MB   | 3.33 MB    | 3.49 MB    | 852.64 kB  | 915.50 kB  |          4 | typescript.js 
 
+
+with property mangling (^_, mangleQuoted)
+           | Oxc        | Oxc        |
+Original   | minified   | gzip       | Iterations | File
+------------------------------------------------------------------------
+72.14 kB   | 22.48 kB   | 8.20 kB    |          2 | react.development.js
+
+173.90 kB  | 55.53 kB   | 18.78 kB   |          2 | moment.js
+
+287.63 kB  | 89.02 kB   | 30.87 kB   |          2 | jquery.js
+
+342.15 kB  | 114.85 kB  | 42.73 kB   |          2 | vue.js
+
+544.10 kB  | 69.88 kB   | 25.59 kB   |          2 | lodash.js
+
+555.77 kB  | 262.77 kB  | 87.67 kB   |          2 | d3.js
+
+1.01 MB    | 436.09 kB  | 121.80 kB  |          2 | bundle.min.js
+
+1.25 MB    | 634.41 kB  | 158.45 kB  |          2 | three.js
+
+2.14 MB    | 707.71 kB  | 160.11 kB  |          2 | victory.js
+
+3.20 MB    | 959.19 kB  | 317.26 kB  |          2 | echarts.js
+
+6.69 MB    | 2.12 MB    | 453.48 kB  |          5 | antd.js
+
+10.95 MB   | 3.31 MB    | 850.93 kB  |          4 | typescript.js
+
