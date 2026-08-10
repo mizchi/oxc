@@ -228,11 +228,20 @@ pub enum ConfigLoadError {
 }
 
 impl ConfigLoadError {
-    /// Get the path of the config file that failed
-    pub fn path(&self) -> Option<&Path> {
+    pub fn display(&self) -> String {
         match self {
-            ConfigLoadError::Parse { path, .. } | ConfigLoadError::Build { path, .. } => Some(path),
-            _ => None,
+            ConfigLoadError::Parse { path, error } => {
+                format!("Failed to parse config file {}: {}", path.display(), error.render())
+            }
+            ConfigLoadError::Build { path, error } => {
+                format!("Failed to build config from file {}: {}", path.display(), error)
+            }
+            ConfigLoadError::JsConfigFileFoundButJsRuntimeNotAvailable => {
+                "JavaScript/TypeScript config file found but JS runtime not available.".to_string()
+            }
+            ConfigLoadError::Diagnostic(diag) => {
+                format!("Failed to load config: {}", diag.render())
+            }
         }
     }
 }
