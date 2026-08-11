@@ -4,6 +4,7 @@ use itertools::Itertools;
 use keep_names::collect_name_symbols;
 use oxc_index::IndexVec;
 use oxc_syntax::class::ClassId;
+use oxc_syntax::scope::ScopeId;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use base54::base54;
@@ -557,6 +558,35 @@ impl<'a, 's> Constraints<'a, 's> {
     fn is_kept_name(&self, name: &str) -> bool {
         is_special_name(name) || (!self.reserved.is_empty() && self.reserved.contains(name))
     }
+
+    /// Whether `symbol_id` will receive a mangled name.
+    ///
+    /// `scope_id` is the scope that owns the symbol. Keeping this decision in one place makes
+    /// slot assignment and the final rename set agree.
+    #[inline]
+    fn is_mangle_candidate(
+        &self,
+        scoping: &Scoping,
+        scope_id: ScopeId,
+        symbol_id: SymbolId,
+    ) -> bool {
+        if scope_id == scoping.root_scope_id()
+            && (!self.top_level
+                || self.exported_symbols.as_ref().is_some_and(|e| e.has_bit(symbol_id.index())))
+        {
+            return false;
+        }
+        if scoping.scope_flags(scope_id).contains_direct_eval() {
+            return false;
+        }
+        if self.is_kept_name(scoping.symbol_name(symbol_id)) {
+            return false;
+        }
+        if self.keep_name_symbols.as_ref().is_some_and(|keep| keep.has_bit(symbol_id.index())) {
+            return false;
+        }
+        true
+    }
 }
 
 impl<'a, 's> SlotAssignment<'a, 's> {
@@ -574,7 +604,6 @@ impl<'a, 's> SlotAssignment<'a, 's> {
         ast_nodes: &AstNodes,
         constraints: &Constraints,
     ) -> Self {
-        let keep_name_symbols = constraints.keep_name_symbols.as_ref();
         // Names of bindings in direct-`eval` scopes — collected here, reserved in Phase 4.
         // TODO: eval reservation is conservative — ideally we'd reserve names per-slot.
         let mut eval_reserved_names: FxHashSet<&'s str> = FxHashSet::default();
@@ -611,7 +640,8 @@ impl<'a, 's> SlotAssignment<'a, 's> {
             // Sort `bindings` in declaration order.
             tmp_bindings.clear();
             tmp_bindings.extend(bindings.values().copied().filter(|binding| {
-                !keep_name_symbols.is_some_and(|keep| keep.has_bit(binding.index()))
+                let symbol_scope_id = scoping.symbol_scope_id(*binding);
+                constraints.is_mangle_candidate(scoping, symbol_scope_id, *binding)
             }));
             if tmp_bindings.is_empty() {
                 continue;
@@ -715,6 +745,11 @@ impl<'a, 's> SlotAssignment<'a, 's> {
                 && let Some(id) = &func.id
                 && let Some(&shadower) = bindings.get(&id.name)
                 && shadower != id.symbol_id()
+                && constraints.is_mangle_candidate(
+                    scoping,
+                    scoping.symbol_scope_id(id.symbol_id()),
+                    id.symbol_id(),
+                )
                 && slots[shadower.index()] != SLOT_UNASSIGNED
             {
                 slots[id.symbol_id().index()] = slots[shadower.index()];
@@ -727,17 +762,13 @@ impl<'a, 's> SlotAssignment<'a, 's> {
 }
 
 impl<'a> SlotRanking<'a> {
-    /// Phase 3: count references per slot and sort hottest-first, skipping slots whose only
-    /// symbols are kept, exported (at top level), eval-visible, or special (`arguments`).
+    /// Phase 3: count references per candidate slot and sort hottest-first.
     fn tally(
         allocator: &'a Allocator,
         scoping: &Scoping,
         constraints: &Constraints,
         slots: &SlotAssignment,
     ) -> Self {
-        let exported_symbols = constraints.exported_symbols.as_ref();
-        let keep_name_symbols = constraints.keep_name_symbols.as_ref();
-        let root_scope_id = scoping.root_scope_id();
         let mut frequencies = ArenaVec::from_iter_in(
             repeat_with(|| SlotFrequency::new(allocator)).take(slots.total_slots),
             &allocator,
@@ -749,19 +780,7 @@ impl<'a> SlotRanking<'a> {
             }
             let symbol_id = SymbolId::from_usize(symbol_id);
             let symbol_scope_id = scoping.symbol_scope_id(symbol_id);
-            if symbol_scope_id == root_scope_id
-                && (!constraints.top_level
-                    || exported_symbols.is_some_and(|e| e.has_bit(symbol_id.index())))
-            {
-                continue;
-            }
-            if scoping.scope_flags(symbol_scope_id).contains_direct_eval() {
-                continue;
-            }
-            if constraints.is_kept_name(scoping.symbol_name(symbol_id)) {
-                continue;
-            }
-            if keep_name_symbols.is_some_and(|keep| keep.has_bit(symbol_id.index())) {
+            if !constraints.is_mangle_candidate(scoping, symbol_scope_id, symbol_id) {
                 continue;
             }
             let index = slot as usize;
