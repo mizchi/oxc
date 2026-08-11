@@ -444,7 +444,7 @@ fn test_fold_is_typeof_equals_undefined_resolved() {
 
     test(
         "var x; function foo() { v = typeof x !== 'undefined' }",
-        "var x; function foo() { v = !1 }",
+        "var x; function foo() { v = x !== void 0 }",
     );
     test(
         "v = typeof x !== 'undefined'; function foo() { var x }",

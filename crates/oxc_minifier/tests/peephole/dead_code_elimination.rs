@@ -831,6 +831,10 @@ fn fold_optional_chain_on_undefined_var_binding() {
     );
     test("var slot; export function call() { slot?.foo }", "export function call() {}");
 
+    // Keep the implicit value out of general constant folding. Materializing it
+    // as `void 0` grows ordinary reads and causes unrelated output churn.
+    test_same("var slot; export function read() { return slot }");
+
     // A resolved write means the binding is not statically undefined.
     test_same(
         "var slot; export function setSlot(v) { slot = v } export function call() { slot?.() }",

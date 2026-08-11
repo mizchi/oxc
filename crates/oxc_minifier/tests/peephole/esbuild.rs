@@ -1636,19 +1636,19 @@ fn test_remove_dead_expr() {
 fn test_inline_single_use_variable() {
     test(
         "var foo; function wrapper(arg0, arg1) {var x = foo; return x}",
-        "var foo; function wrapper(arg0, arg1) {}",
+        "var foo; function wrapper(arg0, arg1) { return foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; }",
+        "var foo; function wrapper(arg0, arg1) { return foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) {const x = foo; return x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; }",
+        "var foo; function wrapper(arg0, arg1) { return foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; if (false) x++; return x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; }",
+        "var foo; function wrapper(arg0, arg1) { return foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; if (true) x++; return x}",
@@ -1656,23 +1656,23 @@ fn test_inline_single_use_variable() {
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return x + x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return NaN;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; return x + x;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return +x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return NaN;}",
+        "var foo; function wrapper(arg0, arg1) { return +foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return -x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return NaN;}",
+        "var foo; function wrapper(arg0, arg1) { return -foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return !x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return !0;}",
+        "var foo; function wrapper(arg0, arg1) { return !foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return ~x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return -1;}",
+        "var foo; function wrapper(arg0, arg1) { return ~foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return void x}",
@@ -1680,43 +1680,43 @@ fn test_inline_single_use_variable() {
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return typeof x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return 'undefined';}",
+        "var foo; function wrapper(arg0, arg1) { return typeof foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return `<${x}>`}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return '<undefined>';}",
+        "var foo; function wrapper(arg0, arg1) { return `<${foo}>`;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return x + 2}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return NaN;}",
+        "var foo; function wrapper(arg0, arg1) { return foo + 2;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return 2 + x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return NaN;}",
+        "var foo; function wrapper(arg0, arg1) { return 2 + foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return x + arg0}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return void 0 + arg0;}",
+        "var foo; function wrapper(arg0, arg1) { return foo + arg0;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return arg0 + x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return arg0 + void 0;}",
+        "var foo; function wrapper(arg0, arg1) { return arg0 + foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return x + fn()}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return void 0 + fn();}",
+        "var foo; function wrapper(arg0, arg1) { return foo + fn();}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return fn() + x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return fn() + void 0;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; return fn() + x;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return x + undef}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return void 0 + undef;}",
+        "var foo; function wrapper(arg0, arg1) { return foo + undef;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; return undef + x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; return undef + void 0;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; return undef + x;}",
     );
     test(
         "function wrapper(arg0, arg1) { let x = fn(); return x + 2}",
@@ -1768,7 +1768,7 @@ fn test_inline_single_use_variable() {
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; delete x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; delete void 0;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; delete x;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; x = 2}",
@@ -1784,15 +1784,15 @@ fn test_inline_single_use_variable() {
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; arg0 = x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; arg0 = void 0;}",
+        "var foo; function wrapper(arg0, arg1) { arg0 = foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; arg0 += x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; arg0 += void 0;}",
+        "var foo; function wrapper(arg0, arg1) { arg0 += foo;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; arg0 ||= x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; arg0 ||= void 0;}",
+        "var foo; function wrapper(arg0, arg1) { arg0 ||= foo;}",
     );
     test(
         "function wrapper(arg0, arg1) { let x = fn(); arg0 = x}",
@@ -1808,15 +1808,15 @@ fn test_inline_single_use_variable() {
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; y.z = x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; y.z = void 0;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; y.z = x;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; y.z += x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; y.z += void 0;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; y.z += x;}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; y.z ||= x}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo; y.z ||= void 0;}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; y.z ||= x;}",
     );
     test(
         "function wrapper(arg0, arg1) { let x = fn(); y.z = x}",
@@ -1968,7 +1968,7 @@ fn test_inline_single_use_variable() {
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; let y = x; return [x, y]}",
-        "var foo; function wrapper(arg0, arg1) { let x = foo, y; return [void 0, void 0];}",
+        "var foo; function wrapper(arg0, arg1) { let x = foo; return [x, x];}",
     );
     test(
         "var foo; function wrapper(arg0, arg1) { let x = foo; let y = ++x; return [x, y]}",

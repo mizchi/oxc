@@ -28,14 +28,15 @@ impl<'a> PeepholeOptimizations {
         let falsy_init = init_constant.as_ref().is_some_and(Self::is_falsy_constant);
         let declaration_in_body_statement_list =
             !declaration_kind.is_var() || Self::is_declaration_in_body_statement_list(ctx);
+        let hoisted_var_value_safe = !declaration_kind.is_var()
+            || Self::is_hoisted_var_value_safe(symbol_id, declaration_in_body_statement_list, ctx);
         let value = if Self::is_for_statement_init(ctx) {
             // for-statement initializers have their value set by the for statement itself.
             None
-        } else if declaration_kind.is_var()
-            && !Self::is_hoisted_var_inlineable(symbol_id, declaration_in_body_statement_list, ctx)
-        {
+        } else if declaration_kind.is_var() && (decl.init.is_none() || !hoisted_var_value_safe) {
             // `var` is hoisted: reads before the initializer line see `undefined`.
-            // Skip unless the safety predicate proves no such read exists.
+            // Skip absent initializers and any initialized declaration whose
+            // safety predicate cannot rule out such a read.
             None
         } else {
             // No initializer hoists to `undefined`; otherwise reuse the constant.
@@ -48,7 +49,8 @@ impl<'a> PeepholeOptimizations {
         } else {
             FreshValueKind::None
         };
-        ctx.init_value(symbol_id, value, kind, falsy_init, decl.init.is_none());
+        let implicit_undefined = decl.init.is_none() && hoisted_var_value_safe;
+        ctx.init_value(symbol_id, value, kind, falsy_init, implicit_undefined);
     }
 
     /// A `ConstantValue` that coerces to `false` (`false`, `0`/`-0`/`NaN`, `""`,
@@ -79,9 +81,8 @@ impl<'a> PeepholeOptimizations {
         false
     }
 
-    /// Predicate for tracking a hoisted `var x = <literal>;` or `var x;` as a
-    /// constant. True when no read can observe a value other than the recorded
-    /// constant:
+    /// Predicate for deriving value facts from a hoisted `var`. True when no
+    /// read can observe a value other than the declaration-derived value:
     /// - the declarator sits at the current body's top scope and that body is
     ///   still in its declarative prelude;
     /// - the declaration is a direct body statement-list item rather than a
@@ -103,7 +104,7 @@ impl<'a> PeepholeOptimizations {
     /// reader in a function declared *before* the var in source order has
     /// already been visited and won't be inlined. Safe but suboptimal; the
     /// common "flag declared at the top" pattern is unaffected.
-    fn is_hoisted_var_inlineable(
+    fn is_hoisted_var_value_safe(
         symbol_id: SymbolId,
         declaration_in_body_statement_list: bool,
         ctx: &TraverseCtx<'a>,
