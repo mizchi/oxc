@@ -32,12 +32,7 @@ impl<'a> PeepholeOptimizations {
             // for-statement initializers have their value set by the for statement itself.
             None
         } else if declaration_kind.is_var()
-            && !Self::is_hoisted_var_inlineable(
-                decl,
-                symbol_id,
-                declaration_in_body_statement_list,
-                ctx,
-            )
+            && !Self::is_hoisted_var_inlineable(symbol_id, declaration_in_body_statement_list, ctx)
         {
             // `var` is hoisted: reads before the initializer line see `undefined`.
             // Skip unless the safety predicate proves no such read exists.
@@ -84,14 +79,13 @@ impl<'a> PeepholeOptimizations {
         false
     }
 
-    /// Predicate for inlining a hoisted `var x = <literal>;`. True when no read
-    /// can observe `x` as its hoisted `undefined`:
+    /// Predicate for tracking a hoisted `var x = <literal>;` or `var x;` as a
+    /// constant. True when no read can observe a value other than the recorded
+    /// constant:
     /// - the declarator sits at the current body's top scope and that body is
     ///   still in its declarative prelude;
     /// - the declaration is a direct body statement-list item rather than a
     ///   conditional, loop, or other nested statement position;
-    /// - it has an initializer (uninitialized `var foo;` would inline to
-    ///   `undefined`, which churns existing tests for marginal benefit);
     /// - script-mode top-level vars are excluded (they alias the global object);
     /// - at program scope, if the module loads any other module (`import`,
     ///   `export … from`, `export * from`), skip: a cyclic importer can call
@@ -110,15 +104,11 @@ impl<'a> PeepholeOptimizations {
     /// already been visited and won't be inlined. Safe but suboptimal; the
     /// common "flag declared at the top" pattern is unaffected.
     fn is_hoisted_var_inlineable(
-        decl: &VariableDeclarator<'a>,
         symbol_id: SymbolId,
         declaration_in_body_statement_list: bool,
         ctx: &TraverseCtx<'a>,
     ) -> bool {
-        if decl.init.is_none()
-            || !declaration_in_body_statement_list
-            || Self::is_script_root_scope(ctx)
-        {
+        if !declaration_in_body_statement_list || Self::is_script_root_scope(ctx) {
             return false;
         }
         // `hoisted_var_inlining_unsafe` is set by a preceding non-declarative

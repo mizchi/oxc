@@ -817,6 +817,29 @@ fn fold_optional_chain_on_undefined_let_binding() {
 }
 
 #[test]
+fn fold_optional_chain_on_undefined_var_binding() {
+    // https://github.com/rolldown/rolldown/issues/10659
+    // An uninitialized module-scoped `var` with no writes is always `undefined`,
+    // including before its declaration is evaluated.
+    test(
+        "var slot; function setSlot(cb) { slot = cb } function make(v) { slot?.(v); return v } console.log(make(1))",
+        "function make(v) { return v } console.log(make(1))",
+    );
+    test(
+        "var slot; function make(v) { slot?.(v); return v } console.log(make(1))",
+        "function make(v) { return v } console.log(make(1))",
+    );
+    test("var slot; export function call() { slot?.foo }", "export function call() {}");
+
+    // A resolved write means the binding is not statically undefined.
+    test_same(
+        "var slot; export function setSlot(v) { slot = v } export function call() { slot?.() }",
+    );
+    // Script-root `var`s are observable and mutable through the global object.
+    test_same_source_type("var slot; function call() { slot?.() } call()", SourceType::script());
+}
+
+#[test]
 fn fold_optional_chain_on_null_const_binding() {
     // A `const` initialized to `null` resolves to `ValueType::Null`, so the
     // optional chain folds the same way the `undefined` case does.

@@ -358,7 +358,7 @@ impl<'a> TraverseCtx<'a, MinifierState<'a>> {
         };
 
         // See `SymbolValue::implicit_undefined` — only meaningful when the
-        // recorded constant is the hoist-produced `undefined` of `let x;`.
+        // recorded constant is the implicit `undefined` of an uninitialized binding.
         let implicit_undefined =
             init_absent && initialized_constant.as_ref().is_some_and(ConstantValue::is_undefined);
 
