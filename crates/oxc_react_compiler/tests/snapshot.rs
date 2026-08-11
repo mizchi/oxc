@@ -116,7 +116,25 @@ fn run_fixture(source: &str) -> String {
     // emitting. Surface any divergence in the snapshot so it stays reviewed rather than
     // drifting silently.
     let transform_body = diagnostics_body(diagnostics.as_slice());
-    let lint_body = diagnostics_body(lint_result.diagnostics.as_slice());
+    // `lint` strips the `[ReactCompiler] <Category>: ` prefix and tags the
+    // category structurally; reconstruct the compile-mode message so the
+    // comparison (and the snapshotted divergence section) stays byte-identical.
+    let lint_diagnostics = lint_result
+        .diagnostics
+        .iter()
+        .map(|d| {
+            let mut diagnostic = d.diagnostic.clone();
+            // The test-only simulated pipeline error sits outside the
+            // `<Category>: ` scheme (see `diagnostics::categorize`).
+            diagnostic.message = if diagnostic.message.starts_with("Pipeline error: ") {
+                format!("[ReactCompiler] {}", diagnostic.message).into()
+            } else {
+                format!("[ReactCompiler] {}: {}", d.category.as_str(), diagnostic.message).into()
+            };
+            diagnostic
+        })
+        .collect::<Vec<_>>();
+    let lint_body = diagnostics_body(&lint_diagnostics);
     if lint_body != transform_body {
         out.push_str("\n\nLint-mode diagnostics (differ from transform):\n\n");
         out.push_str(if lint_body.is_empty() { "(none)\n" } else { &lint_body });

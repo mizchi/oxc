@@ -1,0 +1,17 @@
+---
+source: crates/oxc_linter/src/tester.rs
+---
+
+  ⚠ react(void-use-memo): useMemo() callbacks must return a value
+    ╭─[void_use_memo.tsx:8:11]
+  7 │     
+  8 │ ╭─▶   useMemo(() => {
+  9 │ │       if (cond) {
+ 10 │ │         setPrevItem(item);
+ 11 │ │         setState(0);
+ 12 │ │       }
+ 13 │ ├─▶   }, [cond, item, init]);
+    · ╰──── useMemo() callbacks must return a value
+ 14 │     
+    ╰────
+  help: This useMemo() callback doesn't return a value. useMemo() is for computing and caching values, not for arbitrary side effects

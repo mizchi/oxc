@@ -1,0 +1,95 @@
+use oxc_macros::declare_oxc_lint;
+use oxc_react_compiler::ErrorCategory;
+
+use crate::{
+    context::{ContextHost, LintContext},
+    rule::Rule,
+    utils::{run_react_compiler_rule, should_run_react_compiler},
+};
+
+#[derive(Debug, Default, Clone)]
+pub struct PreserveManualMemoization;
+
+declare_oxc_lint!(
+    /// ### What it does
+    ///
+    /// Validates that existing manual memoization (`useMemo`, `useCallback`,
+    /// `React.memo`) is preserved by the React Compiler: the compiler only
+    /// compiles code whose inferred dependencies match or exceed the manually
+    /// specified ones.
+    ///
+    /// Powered by the React Compiler, which runs once per file and is shared
+    /// with the other React Compiler rules. Port of
+    /// [`react-hooks/preserve-manual-memoization`](https://react.dev/reference/eslint-plugin-react-hooks/lints/preserve-manual-memoization).
+    ///
+    /// ### Why is this bad?
+    ///
+    /// When the compiler cannot preserve manual memoization it skips
+    /// optimizing that code, and the mismatch usually points at an incomplete
+    /// dependency list in the original `useMemo` or `useCallback`, which can
+    /// produce stale values.
+    ///
+    /// ### Examples
+    ///
+    /// Examples of **incorrect** code for this rule:
+    /// ```jsx
+    /// import { useMemo } from 'react';
+    /// function Component({ propA }) {
+    ///   return useMemo(() => {
+    ///     return propA.x();
+    ///   }, [propA.x]);
+    /// }
+    /// ```
+    ///
+    /// Examples of **correct** code for this rule:
+    /// ```jsx
+    /// import { useMemo } from 'react';
+    /// function Component({ propA }) {
+    ///   return useMemo(() => propA.x, [propA]);
+    /// }
+    /// ```
+    PreserveManualMemoization,
+    react,
+    nursery,
+    version = "next",
+);
+
+impl Rule for PreserveManualMemoization {
+    fn run_once(&self, ctx: &LintContext) {
+        run_react_compiler_rule(ctx, ErrorCategory::PreserveManualMemo);
+    }
+
+    fn should_run(&self, ctx: &ContextHost) -> bool {
+        should_run_react_compiler(ctx)
+    }
+}
+
+#[test]
+fn test() {
+    use crate::tester::Tester;
+
+    let pass = vec![
+        // Derived from crates/oxc_react_compiler/fixtures cases.
+        "
+import {useMemo} from 'react';
+function Component({propA}) {
+  return useMemo(() => propA.x, [propA]);
+}
+",
+    ];
+
+    let fail = vec![
+        // Derived from crates/oxc_react_compiler/fixtures cases.
+        "
+import {useMemo} from 'react';
+function Component({propA}) {
+  return useMemo(() => {
+    return propA.x();
+  }, [propA.x]);
+}
+",
+    ];
+
+    Tester::new(PreserveManualMemoization::NAME, PreserveManualMemoization::PLUGIN, pass, fail)
+        .test_and_snapshot();
+}

@@ -15,6 +15,8 @@
 //! returned at the end of the pipeline travel as
 //! [`Diagnostics`](oxc_diagnostics::Diagnostics).
 
+use std::borrow::Cow;
+
 use oxc_diagnostics::{OxcDiagnostic, Severity};
 use oxc_span::Span;
 
@@ -100,6 +102,37 @@ impl ErrorCategory {
         }
     }
 
+    /// The category whose [`Self::as_str`] is `name`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "Hooks" => Self::Hooks,
+            "CapitalizedCalls" => Self::CapitalizedCalls,
+            "StaticComponents" => Self::StaticComponents,
+            "UseMemo" => Self::UseMemo,
+            "VoidUseMemo" => Self::VoidUseMemo,
+            "PreserveManualMemo" => Self::PreserveManualMemo,
+            "MemoDependencies" => Self::MemoDependencies,
+            "IncompatibleLibrary" => Self::IncompatibleLibrary,
+            "Immutability" => Self::Immutability,
+            "Globals" => Self::Globals,
+            "Refs" => Self::Refs,
+            "EffectExhaustiveDependencies" => Self::EffectExhaustiveDependencies,
+            "EffectSetState" => Self::EffectSetState,
+            "EffectDerivationsOfState" => Self::EffectDerivationsOfState,
+            "ErrorBoundaries" => Self::ErrorBoundaries,
+            "Purity" => Self::Purity,
+            "RenderSetState" => Self::RenderSetState,
+            "Invariant" => Self::Invariant,
+            "Todo" => Self::Todo,
+            "Syntax" => Self::Syntax,
+            "UnsupportedSyntax" => Self::UnsupportedSyntax,
+            "Config" => Self::Config,
+            "Gating" => Self::Gating,
+            "Suppression" => Self::Suppression,
+            _ => return None,
+        })
+    }
+
     /// Whether `diagnostic` was built for this category via [`Self::diagnostic`],
     /// recovered from the deterministic message prefix.
     pub fn matches(self, diagnostic: &OxcDiagnostic) -> bool {
@@ -110,6 +143,52 @@ impl ErrorCategory {
     fn of(diagnostic: &OxcDiagnostic) -> Option<&str> {
         let rest = diagnostic.message.strip_prefix("[ReactCompiler] ")?;
         rest.split_once(": ").map(|(category, _)| category)
+    }
+}
+
+/// A lint finding paired with its [`ErrorCategory`].
+///
+/// `diagnostic.message` is the bare reason — the internal
+/// `[ReactCompiler] <Category>: ` prefix carried by compile-mode diagnostics
+/// is already stripped.
+#[derive(Debug, Clone)]
+pub struct LintDiagnostic {
+    pub category: ErrorCategory,
+    pub diagnostic: OxcDiagnostic,
+}
+
+/// Split a diagnostic built by [`ErrorCategory::diagnostic`] into its category
+/// and the bare-reason diagnostic.
+pub(crate) fn categorize(mut diagnostic: OxcDiagnostic) -> LintDiagnostic {
+    let parsed = diagnostic
+        .message
+        .strip_prefix("[ReactCompiler] ")
+        .and_then(|rest| rest.split_once(": "))
+        .and_then(|(name, reason)| {
+            ErrorCategory::from_name(name).map(|category| (category, reason.to_string()))
+        });
+    match parsed {
+        Some((category, reason)) => {
+            diagnostic.message = Cow::Owned(reason);
+            LintDiagnostic { category, diagnostic }
+        }
+        None => {
+            // Only `log_error`'s mirror of upstream's test-only simulated
+            // unknown exception (`Pipeline error: …`) legitimately escapes
+            // the `<Category>: <reason>` scheme; treat it as an internal
+            // error and keep everything after the shared prefix.
+            debug_assert!(
+                diagnostic.message.starts_with("[ReactCompiler] Pipeline error: "),
+                "malformed React Compiler diagnostic message: {}",
+                diagnostic.message
+            );
+            let stripped =
+                diagnostic.message.strip_prefix("[ReactCompiler] ").map(ToString::to_string);
+            if let Some(stripped) = stripped {
+                diagnostic.message = Cow::Owned(stripped);
+            }
+            LintDiagnostic { category: ErrorCategory::Invariant, diagnostic }
+        }
     }
 }
 

@@ -1,0 +1,23 @@
+---
+source: crates/oxc_linter/src/tester.rs
+---
+
+  ⚠ react(set-state-in-render): Calling setState from useMemo may trigger an infinite loop
+    ╭─[set_state_in_render.tsx:10:7]
+  9 │     if (cond) {
+ 10 │       setPrevItem(item);
+    ·       ─────┬─────
+    ·            ╰── Found setState() within useMemo()
+ 11 │       setState(0);
+    ╰────
+  help: Each time the memo callback is evaluated it will change state. This can cause a memoization dependency to change, running the memo function again and causing an infinite loop. Instead of setting state in useMemo(), prefer deriving the value during render. (https://react.dev/reference/react/useState)
+
+  ⚠ react(set-state-in-render): Calling setState from useMemo may trigger an infinite loop
+    ╭─[set_state_in_render.tsx:11:7]
+ 10 │       setPrevItem(item);
+ 11 │       setState(0);
+    ·       ────┬───
+    ·           ╰── Found setState() within useMemo()
+ 12 │     }
+    ╰────
+  help: Each time the memo callback is evaluated it will change state. This can cause a memoization dependency to change, running the memo function again and causing an infinite loop. Instead of setting state in useMemo(), prefer deriving the value during render. (https://react.dev/reference/react/useState)

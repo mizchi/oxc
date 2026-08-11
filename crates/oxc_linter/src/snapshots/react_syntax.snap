@@ -1,0 +1,12 @@
+---
+source: crates/oxc_linter/src/tester.rs
+---
+
+  ⚠ react(syntax): Cannot reassign a `const` variable
+   ╭─[syntax.tsx:4:3]
+ 3 │   const x = 0;
+ 4 │   x = 1;
+   ·   ─
+ 5 │   return <div>{x}</div>;
+   ╰────
+  help: `x` is declared as const

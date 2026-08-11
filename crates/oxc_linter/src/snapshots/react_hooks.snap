@@ -1,0 +1,59 @@
+---
+source: crates/oxc_linter/src/tester.rs
+---
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:4:26]
+ 3 │ function Component() {
+ 4 │   const result = cond ?? useConditionalHook();
+   ·                          ──────────────────
+ 5 │   return <>
+   ╰────
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:4:18]
+ 3 │   'use memo';
+ 4 │   return cond ?? useConditionalHook();
+   ·                  ──────────────────
+ 5 │ }
+   ╰────
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:8:24]
+ 7 │   'use memo';
+ 8 │   return props.cond && useConditionalHook();
+   ·                        ──────────────────
+ 9 │ }
+   ╰────
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:5:18]
+ 4 │   'use no forget';
+ 5 │   return cond ?? useConditionalHook();
+   ·                  ──────────────────
+ 6 │ 
+   ╰────
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:4:5]
+ 3 │   if (cond) {
+ 4 │     useConditionalHook();
+   ·     ──────────────────
+ 5 │   }
+   ╰────
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:3:11]
+ 2 │ function useConditional() {
+ 3 │   cond ?? useConditionalHook();
+   ·           ──────────────────
+ 4 │   props.cond && useConditionalHook();
+   ╰────
+
+  ⚠ react(hooks): Hooks must always be called in a consistent order, and may not be called conditionally. See the Rules of Hooks (https://react.dev/warnings/invalid-hook-call-warning)
+   ╭─[hooks.tsx:4:17]
+ 3 │   cond ?? useConditionalHook();
+ 4 │   props.cond && useConditionalHook();
+   ·                 ──────────────────
+ 5 │   return <div>Hello world</div>;
+   ╰────

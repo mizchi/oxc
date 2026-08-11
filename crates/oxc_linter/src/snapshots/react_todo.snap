@@ -1,0 +1,12 @@
+---
+source: crates/oxc_linter/src/tester.rs
+---
+
+  ⚠ react(todo): Support local variables named `fbt`
+   ╭─[todo.tsx:2:23]
+ 1 │ function Component() {
+ 2 │                 const fbt = 'span';
+   ·                       ───
+ 3 │                 return <fbt desc='label'>Hello</fbt>;
+   ╰────
+  help: Local variables named `fbt` may conflict with the fbt plugin and are not yet supported

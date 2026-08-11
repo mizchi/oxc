@@ -1,0 +1,11 @@
+---
+source: crates/oxc_linter/src/tester.rs
+---
+
+  ⚠ react(no-deriving-state-in-effects): Values derived from props and state should be calculated during render, not in an effect. (https://react.dev/learn/you-might-not-need-an-effect#updating-state-based-on-props-or-state)
+   ╭─[no_deriving_state_in_effects.tsx:8:5]
+ 7 │   useEffect(() => {
+ 8 │     setFullName(firstName + ' ' + lastName);
+   ·     ───────────
+ 9 │   }, [firstName, lastName]);
+   ╰────

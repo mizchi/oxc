@@ -1,0 +1,67 @@
+use oxc_macros::declare_oxc_lint;
+use oxc_react_compiler::ErrorCategory;
+
+use crate::{
+    context::{ContextHost, LintContext},
+    rule::Rule,
+    utils::{run_react_compiler_rule, should_run_react_compiler},
+};
+
+#[derive(Debug, Default, Clone)]
+pub struct Todo;
+
+declare_oxc_lint!(
+    /// ### What it does
+    ///
+    /// Reports code that React Compiler cannot yet analyze because it uses
+    /// features the compiler has not implemented. These are skipped
+    /// optimizations (bail-outs), not rule violations.
+    ///
+    /// Powered by the React Compiler, which runs once per file and is shared
+    /// with the other React Compiler rules. Port of
+    /// [`react-hooks/todo`](https://react.dev/reference/eslint-plugin-react-hooks/lints/todo).
+    ///
+    /// ### Why is this bad?
+    ///
+    /// The affected component or hook is left unoptimized. Enable this rule
+    /// only when you want visibility into what the compiler skips; upstream
+    /// ships it as an off-by-default hint.
+    Todo,
+    react,
+    nursery,
+    version = "next",
+);
+
+impl Rule for Todo {
+    fn run_once(&self, ctx: &LintContext) {
+        run_react_compiler_rule(ctx, ErrorCategory::Todo);
+    }
+
+    fn should_run(&self, ctx: &ContextHost) -> bool {
+        should_run_react_compiler(ctx)
+    }
+}
+
+#[test]
+fn test() {
+    use crate::tester::Tester;
+
+    let pass = vec![
+        "
+function Component(props) {
+  return <div>{props.text}</div>;
+}
+",
+    ];
+
+    let fail = vec![
+        // ---- oxlint-specific ----
+        // A bail-out (local named fbt) is a skipped optimization; enabling this rule surfaces it.
+        "function Component() {
+                const fbt = 'span';
+                return <fbt desc='label'>Hello</fbt>;
+            }",
+    ];
+
+    Tester::new(Todo::NAME, Todo::PLUGIN, pass, fail).test_and_snapshot();
+}
