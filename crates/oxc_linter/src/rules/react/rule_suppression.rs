@@ -51,6 +51,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Reports suppressions of React rules, which make the React Compiler skip the affected function.",
 );
 
 impl Rule for RuleSuppression {

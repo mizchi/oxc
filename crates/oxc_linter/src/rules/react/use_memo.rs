@@ -51,6 +51,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates usage of the `useMemo()` hook against common mistakes.",
 );
 
 impl Rule for UseMemo {

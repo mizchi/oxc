@@ -54,6 +54,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates the Rules of Hooks with the React Compiler's analysis.",
 );
 
 impl Rule for Hooks {

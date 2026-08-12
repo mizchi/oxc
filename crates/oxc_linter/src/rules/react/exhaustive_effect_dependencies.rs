@@ -36,6 +36,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates that effect dependencies are exhaustive, without extraneous values.",
 );
 
 impl Rule for ExhaustiveEffectDependencies {

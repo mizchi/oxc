@@ -34,6 +34,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates the React Compiler configuration options.",
 );
 
 impl Rule for Config {

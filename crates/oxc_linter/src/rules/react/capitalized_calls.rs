@@ -48,6 +48,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Disallow calling capitalized functions and methods instead of using JSX.",
 );
 
 impl Rule for CapitalizedCalls {

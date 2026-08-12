@@ -52,6 +52,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Disallow calling `setState` synchronously inside an effect.",
 );
 
 impl Rule for SetStateInEffect {

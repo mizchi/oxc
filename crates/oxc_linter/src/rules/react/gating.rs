@@ -33,6 +33,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates the configuration of React Compiler's gating mode.",
 );
 
 impl Rule for Gating {

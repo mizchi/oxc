@@ -53,6 +53,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Disallow deriving values from state in an effect instead of computing them during render.",
 );
 
 impl Rule for NoDerivingStateInEffects {

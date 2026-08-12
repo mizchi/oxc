@@ -48,6 +48,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates that components and hooks do not call known-impure functions.",
 );
 
 impl Rule for Purity {

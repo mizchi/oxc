@@ -30,6 +30,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Reports code using features the React Compiler has not implemented yet.",
 );
 
 impl Rule for Todo {

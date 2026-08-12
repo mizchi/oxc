@@ -54,6 +54,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Disallow assigning to or mutating globals during render.",
 );
 
 impl Rule for Globals {

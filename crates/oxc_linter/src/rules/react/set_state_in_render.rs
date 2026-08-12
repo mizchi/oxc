@@ -50,6 +50,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Disallow setting state during render, which can trigger additional renders and infinite render loops.",
 );
 
 impl Rule for SetStateInRender {

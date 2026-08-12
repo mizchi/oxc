@@ -45,6 +45,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Warns on syntax that the React Compiler does not plan to support, such as `eval`.",
 );
 
 impl Rule for UnsupportedSyntax {

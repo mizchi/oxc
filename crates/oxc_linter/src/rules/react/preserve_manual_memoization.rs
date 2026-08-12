@@ -52,6 +52,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates that existing manual memoization is preserved by the React Compiler.",
 );
 
 impl Rule for PreserveManualMemoization {

@@ -51,6 +51,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates that `useMemo()` callbacks return a value and the result is used.",
 );
 
 impl Rule for VoidUseMemo {

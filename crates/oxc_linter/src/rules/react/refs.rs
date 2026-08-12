@@ -53,6 +53,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates correct usage of refs: not reading or writing `ref.current` during render.",
 );
 
 impl Rule for Refs {

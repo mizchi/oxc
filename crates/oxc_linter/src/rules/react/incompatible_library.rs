@@ -49,6 +49,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Warns on usage of libraries that are incompatible with memoization.",
 );
 
 impl Rule for IncompatibleLibrary {

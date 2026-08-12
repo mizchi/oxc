@@ -28,6 +28,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Reports invalid JavaScript syntax encountered by the React Compiler.",
 );
 
 impl Rule for Syntax {

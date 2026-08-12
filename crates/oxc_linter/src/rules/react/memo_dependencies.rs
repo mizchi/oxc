@@ -36,6 +36,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates that `useMemo()` and `useCallback()` dependencies are comprehensive, without extraneous values.",
 );
 
 impl Rule for MemoDependencies {

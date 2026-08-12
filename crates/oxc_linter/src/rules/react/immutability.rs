@@ -49,6 +49,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Disallow mutating props, state, and other values that are immutable by the Rules of React.",
 );
 
 impl Rule for Immutability {

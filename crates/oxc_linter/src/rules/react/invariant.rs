@@ -29,6 +29,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Reports internal React Compiler invariant violations, which indicate a compiler bug.",
 );
 
 impl Rule for Invariant {

@@ -50,6 +50,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates that components are static, not recreated on every render.",
 );
 
 impl Rule for StaticComponents {

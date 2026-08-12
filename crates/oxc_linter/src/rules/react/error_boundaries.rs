@@ -55,6 +55,7 @@ declare_oxc_lint!(
     react,
     nursery,
     version = "next",
+    short_description = "Validates using error boundaries instead of try/catch for child errors.",
 );
 
 impl Rule for ErrorBoundaries {
