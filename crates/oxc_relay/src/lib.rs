@@ -297,10 +297,20 @@ fn find_definition_name(text: &str) -> Option<&str> {
 fn relative_path(from: &str, to: &str) -> String {
     let from = normalize(from);
     let to = normalize(to);
-    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let is_windows = from.first().is_some_and(|component| is_windows_drive(component))
+        && to.first().is_some_and(|component| is_windows_drive(component));
+    let common = from
+        .iter()
+        .zip(&to)
+        .take_while(|(a, b)| if is_windows { a.eq_ignore_ascii_case(b) } else { a == b })
+        .count();
     let mut components = vec![".."; from.len() - common];
     components.extend_from_slice(&to[common..]);
     if components.is_empty() { ".".to_string() } else { components.join("/") }
+}
+
+fn is_windows_drive(component: &str) -> bool {
+    matches!(component.as_bytes(), [drive, b':'] if drive.is_ascii_alphabetic())
 }
 
 /// Split a path into components, dropping `.` and folding `..`.
@@ -341,5 +351,6 @@ mod test {
         assert_eq!(relative_path("/a/b/c", "/a/d/e"), "../../d/e");
         assert_eq!(relative_path("src/pages", "src/__generated__"), "../__generated__");
         assert_eq!(relative_path("C:\\a\\b", "C:\\a\\c"), "../c");
+        assert_eq!(relative_path("C:\\Repo\\src", "c:\\repo\\src\\__generated__"), "__generated__");
     }
 }
