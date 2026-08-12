@@ -91,19 +91,22 @@ impl<'a> IsolatedDeclarations<'a> {
                         // `is_maybe_undefined` includes `any`, but declaration emit must
                         // preserve an explicit `| undefined` for a defaulted type containing
                         // `any`, unless the type already contains `undefined` explicitly.
-                        if matches!(ts_type, TSType::TSTypeReference(_)) {
-                            self.error(implicitly_adding_undefined_to_type(param.span));
-                        } else if (contains_any(&ts_type) && !contains_undefined(&ts_type))
-                            || !ts_type.is_maybe_undefined()
-                        {
-                            let undefined = TSType::new_ts_undefined_keyword(SPAN, self);
-                            let ts_type = if let TSType::TSUnionType(mut union) = ts_type {
-                                union.types.push(undefined);
-                                TSType::TSUnionType(union)
+                        let needs_undefined = (contains_any(&ts_type)
+                            && !contains_undefined(&ts_type))
+                            || !ts_type.is_maybe_undefined();
+                        if needs_undefined {
+                            if contains_type_reference(&ts_type) {
+                                self.error(implicitly_adding_undefined_to_type(param.span));
                             } else {
-                                TSType::new_ts_union_type(SPAN, [ts_type, undefined], self)
-                            };
-                            return TSTypeAnnotation::boxed(SPAN, ts_type, self);
+                                let undefined = TSType::new_ts_undefined_keyword(SPAN, self);
+                                let ts_type = if let TSType::TSUnionType(mut union) = ts_type {
+                                    union.types.push(undefined);
+                                    TSType::TSUnionType(union)
+                                } else {
+                                    TSType::new_ts_union_type(SPAN, [ts_type, undefined], self)
+                                };
+                                return TSTypeAnnotation::boxed(SPAN, ts_type, self);
+                            }
                         }
                     }
 
@@ -196,6 +199,7 @@ fn contains_any(ts_type: &TSType<'_>) -> bool {
     match ts_type {
         TSType::TSAnyKeyword(_) => true,
         TSType::TSUnionType(union) => union.types.iter().any(contains_any),
+        TSType::TSParenthesizedType(parenthesized) => contains_any(&parenthesized.type_annotation),
         _ => false,
     }
 }
@@ -204,6 +208,20 @@ fn contains_undefined(ts_type: &TSType<'_>) -> bool {
     match ts_type {
         TSType::TSUndefinedKeyword(_) => true,
         TSType::TSUnionType(union) => union.types.iter().any(contains_undefined),
+        TSType::TSParenthesizedType(parenthesized) => {
+            contains_undefined(&parenthesized.type_annotation)
+        }
+        _ => false,
+    }
+}
+
+fn contains_type_reference(ts_type: &TSType<'_>) -> bool {
+    match ts_type {
+        TSType::TSTypeReference(_) => true,
+        TSType::TSUnionType(union) => union.types.iter().any(contains_type_reference),
+        TSType::TSParenthesizedType(parenthesized) => {
+            contains_type_reference(&parenthesized.type_annotation)
+        }
         _ => false,
     }
 }

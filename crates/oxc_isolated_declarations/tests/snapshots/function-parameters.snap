@@ -18,6 +18,9 @@ export declare const fooBad2: () => number;
 export declare function withAny(a: any | undefined, b: string): void;
 export declare function withAnyUnion(a: any | string | undefined, b: string): void;
 export declare function withAnyUndefinedUnion(a: any | undefined, b: string): void;
+type Foo = {};
+export declare function withAnyTypeReferenceUnion(a: any | Foo, b: string): void;
+export declare function withAnyTypeReferenceUndefinedUnion(a: any | Foo | undefined, b: string): void;
 export declare function withUnknown(a: unknown, b: string): void;
 export declare function withTypeAssertion(a?: any): void;
 export declare function restWithDefault(...[value, options]: [string, object]): void;
@@ -25,6 +28,7 @@ export declare function restWithNestedDefault(...[a, { b, c }]: [number, {
 	b: number;
 	c: number;
 }]): void;
+export {};
 
 
 ==================== Errors ====================
@@ -81,6 +85,15 @@ export declare function restWithNestedDefault(...[a, { b, c }]: [number, {
  26 | export const fooBad2 = ({a, b} = { a: 1, b: 2 }): number => {
     :                         ^^^^^^^^^^^^^^^^^^^^^^^
  27 |   return 2;
+    `----
+
+  x TS9025: Declaration emit for this parameter requires implicitly adding
+  | undefined to it's type. This is not supported with --isolatedDeclarations.
+    ,-[35:43]
+ 34 | type Foo = {};
+ 35 | export function withAnyTypeReferenceUnion(a: any | Foo = {}, b: string): void { }
+    :                                           ^^^^^^^^^^^^^^^^^
+ 36 | export function withAnyTypeReferenceUndefinedUnion(a: any | Foo | undefined = {}, b: string): void { }
     `----
 
 
