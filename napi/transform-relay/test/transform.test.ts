@@ -33,6 +33,7 @@ describe("transformSync", () => {
     expect(unnamed.code).toBe("");
     expect(unnamed.errors[0].message).toContain("named GraphQL");
 
+    // @ts-expect-error Testing runtime validation.
     const invalidOption = transformSync("foo.js", fixture, { language: "elm" });
     expect(invalidOption.code).toBe("");
     expect(invalidOption.errors[0].message).toContain("language");
