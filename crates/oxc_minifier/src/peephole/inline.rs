@@ -61,7 +61,22 @@ impl<'a> PeepholeOptimizations {
         } else {
             FreshValueKind::None
         };
-        ctx.init_value(symbol_id, value, kind, falsy_init, decl.init.is_none());
+        let implicit_undefined = decl
+            .init
+            .as_ref()
+            .is_none_or(|init| Self::is_direct_implicit_undefined_alias(init, ctx));
+        ctx.init_value(symbol_id, value, kind, falsy_init, implicit_undefined);
+    }
+
+    /// Preserve the provenance of an implicit `undefined` through direct
+    /// aliases. Materializing the value as `void 0` can be larger than keeping
+    /// the alias and can preempt statement-level single-use substitution.
+    fn is_direct_implicit_undefined_alias(init: &Expression<'a>, ctx: &TraverseCtx<'a>) -> bool {
+        let Expression::Identifier(ident) = init.get_inner_expression() else { return false };
+        let Some(symbol_id) = ctx.scoping().get_reference(ident.reference_id()).symbol_id() else {
+            return false;
+        };
+        ctx.state.symbols.value(symbol_id).is_some_and(|value| value.implicit_undefined)
     }
 
     /// A `ConstantValue` that coerces to `false` (`false`, `0`/`-0`/`NaN`, `""`,
