@@ -861,15 +861,13 @@ mod test {
         assert!(matches!(result, CliRunResult::LintNoFilesFound), "{result:?}");
 
         // Explicitly passed gitignored directories are skipped too.
-        let (_, result) =
-            Tester::new().with_cwd(repo_path).test_output(&["sub/generated/pkg"]);
+        let (_, result) = Tester::new().with_cwd(repo_path).test_output(&["sub/generated/pkg"]);
         assert!(matches!(result, CliRunResult::LintNoFilesFound), "{result:?}");
 
         // But an explicitly named file is linted even when gitignored;
         // `.gitignore` only scopes discovery.
-        let (stdout, result) = Tester::new()
-            .with_cwd(pkg_path)
-            .test_output(&["-D", "no-debugger", "index.ts"]);
+        let (stdout, result) =
+            Tester::new().with_cwd(pkg_path).test_output(&["-D", "no-debugger", "index.ts"]);
         assert!(matches!(result, CliRunResult::LintFoundErrors), "{result:?}\n{stdout}");
         assert!(stdout.contains("on 1 file"), "{stdout}");
     }
