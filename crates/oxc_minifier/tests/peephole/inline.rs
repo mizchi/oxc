@@ -486,6 +486,55 @@ fn keep_value_context_read_of_uninitialized_binding() {
     );
 }
 
+// https://github.com/oxc-project/oxc/pull/25497
+// FunctionDeclarationInstantiation creates an implicit `arguments` binding for
+// non-arrow functions. A later `var arguments;` declaration does not reset that
+// binding to `undefined`.
+#[test]
+fn initializer_less_var_does_not_overwrite_implicit_arguments() {
+    let options = CompressOptions::smallest();
+    let source_type = SourceType::script();
+
+    for source in [
+        "globalThis.f = function () { var arguments; return typeof arguments; }",
+        "globalThis.f = function ({}) { var arguments; return typeof arguments; }",
+        "globalThis.f = function (...values) { var arguments; return typeof arguments; }",
+        "globalThis.f = async function () { var arguments; return typeof arguments; }",
+        "globalThis.f = function* () { var arguments; return typeof arguments; }",
+        "globalThis.f = async function* () { var arguments; return typeof arguments; }",
+        "globalThis.value = { method() { var arguments; return typeof arguments; } }",
+        "globalThis.value = { async method() { var arguments; return typeof arguments; } }",
+        "globalThis.value = { *method() { var arguments; return typeof arguments; } }",
+    ] {
+        test_options_source_type(source, source, source_type, &options);
+    }
+
+    // The Uglify corpus names these function expressions `arguments`. Removing
+    // the unused function-expression name is valid, but replacing the implicit
+    // arguments object is not.
+    test_options_source_type(
+        "globalThis.f = function arguments({}) { var arguments; return typeof arguments; }",
+        "globalThis.f = function ({}) { var arguments; return typeof arguments; }",
+        source_type,
+        &options,
+    );
+    test_options_source_type(
+        "globalThis.f = function arguments(...values) { var arguments; return typeof arguments; }",
+        "globalThis.f = function (...values) { var arguments; return typeof arguments; }",
+        source_type,
+        &options,
+    );
+
+    // Arrow functions do not create an implicit `arguments` binding, so their
+    // explicit local declaration is still known to be `undefined`.
+    test_options_source_type(
+        "globalThis.f = () => { var arguments; return typeof arguments; }",
+        "globalThis.f = () => 'undefined'",
+        source_type,
+        &options,
+    );
+}
+
 #[test]
 fn small_value() {
     let options = CompressOptions::smallest();

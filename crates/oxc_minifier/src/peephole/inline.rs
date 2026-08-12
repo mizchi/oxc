@@ -45,10 +45,10 @@ impl<'a> PeepholeOptimizations {
             None
         } else if declaration_kind.is_var()
             && decl.init.is_none()
-            && !Self::is_initializer_less_var_value_safe(symbol_id, ctx)
+            && !Self::is_initializer_less_var_value_safe(ident, symbol_id, ctx)
         {
-            // Script globals and reads through `with` can observe values that
-            // are not represented by resolved write references.
+            // Some bindings can have values that are not represented by
+            // resolved write references.
             None
         } else {
             // No initializer hoists to `undefined`; otherwise reuse the constant.
@@ -147,14 +147,26 @@ impl<'a> PeepholeOptimizations {
 
     /// An initializer-less `var` is `undefined` from scope instantiation onward,
     /// so initializer ordering and cross-function reads are irrelevant. Exclude
-    /// the two cases that can change the value without a resolved write:
-    /// script-root bindings alias the global object, and a read inside `with`
-    /// may resolve to a property of the binding object at runtime.
-    fn is_initializer_less_var_value_safe(symbol_id: SymbolId, ctx: &TraverseCtx<'a>) -> bool {
+    /// cases that can have another value without a resolved write: script-root
+    /// bindings alias the global object, `arguments` is implicitly initialized
+    /// in non-arrow functions, and a read inside `with` may resolve to a property
+    /// of the binding object at runtime.
+    fn is_initializer_less_var_value_safe(
+        ident: &BindingIdentifier<'a>,
+        symbol_id: SymbolId,
+        ctx: &TraverseCtx<'a>,
+    ) -> bool {
         if Self::is_script_root_scope(ctx) {
             return false;
         }
         let binding_scope_id = ctx.scoping().symbol_scope_id(symbol_id);
+        let binding_scope_flags = ctx.scoping().scope_flags(binding_scope_id);
+        if ident.name == "arguments"
+            && binding_scope_flags.is_function()
+            && !binding_scope_flags.is_arrow()
+        {
+            return false;
+        }
         ctx.scoping().get_resolved_references(symbol_id).all(|reference| {
             ctx.scoping()
                 .scope_ancestors(reference.scope_id())
