@@ -312,7 +312,7 @@ impl<'a> TraverseCtx<'a, MinifierState<'a>> {
         constant: Option<ConstantValue<'a>>,
         kind: FreshValueKind,
         falsy_init: bool,
-        implicit_undefined: bool,
+        init_absent: bool,
     ) {
         let mut references = ReferenceCounts::default();
         for reference in self.scoping().get_resolved_references(symbol_id) {
@@ -357,13 +357,10 @@ impl<'a> TraverseCtx<'a, MinifierState<'a>> {
                 && !(self.source_type().is_script() && scope_id == self.scoping().root_scope_id())
         };
 
-        // See `SymbolValue::implicit_undefined`. The caller supplies the
-        // declaration-shape proof; invalidate it for the same cases that make
-        // declaration-derived constants unsafe.
-        let implicit_undefined = implicit_undefined
-            && !has_multiple_value_declarations
-            && !references.has_writes()
-            && !scope_flags.contains(ScopeFlags::DirectEval);
+        // See `SymbolValue::implicit_undefined` — only meaningful when the
+        // recorded constant is the implicit `undefined` of an uninitialized binding.
+        let implicit_undefined =
+            init_absent && initialized_constant.as_ref().is_some_and(ConstantValue::is_undefined);
 
         let symbol_value = SymbolValue {
             initialized_constant,

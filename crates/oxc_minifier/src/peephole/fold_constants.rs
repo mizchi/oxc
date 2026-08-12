@@ -1163,7 +1163,7 @@ fn try_fold_at_optional<'a>(
     if !*optional || has_optional {
         return None;
     }
-    match optional_chain_base_value_type(base, ctx) {
+    match base.value_type(ctx) {
         ValueType::Null | ValueType::Undefined => {
             let base_has_side_effects = base.may_have_side_effects(ctx);
             let taken = base.take_in(ctx);
@@ -1175,24 +1175,6 @@ fn try_fold_at_optional<'a>(
             *optional = false;
             Some(ChainFold::Flipped { has_optional: false })
         }
-    }
-}
-
-fn optional_chain_base_value_type<'a>(base: &Expression<'a>, ctx: &TraverseCtx<'a>) -> ValueType {
-    let value_type = base.value_type(ctx);
-    if value_type != ValueType::Undetermined {
-        return value_type;
-    }
-    let Expression::Identifier(ident) = base.get_inner_expression() else {
-        return value_type;
-    };
-    let Some(symbol_id) = ctx.scoping().get_reference(ident.reference_id()).symbol_id() else {
-        return value_type;
-    };
-    if ctx.state.symbols.value(symbol_id).is_some_and(|value| value.implicit_undefined) {
-        ValueType::Undefined
-    } else {
-        value_type
     }
 }
 

@@ -279,12 +279,12 @@ fn test_fold_sequence_expr() {
 
 #[test]
 fn test_logical_expression() {
-    test("var a; a != null && a.b()", "var a; a?.b()");
-    test("var a; a == null || a.b()", "var a; a?.b()");
+    test("var a; a != null && a.b()", "var a");
+    test("var a; a == null || a.b()", "var a");
     test_same("a != null && a.b()"); // a may have a getter
     test_same("a == null || a.b()"); // a may have a getter
-    test("var a; null != a && a.b()", "var a; a?.b()");
-    test("var a; null == a || a.b()", "var a; a?.b()");
+    test("var a; null != a && a.b()", "var a");
+    test("var a; null == a || a.b()", "var a");
 
     test("x == null && y", "x ?? y");
     test("x != null || y", "x ?? y");
@@ -429,13 +429,13 @@ fn test_fold_binary_expression() {
     test("var a, b; a <= b", "var a, b;");
     test("var a, b; a >= b", "var a, b;");
 
-    test_same("var a, b; a + b");
-    test("var a, b; 'a' + b", "var a, b; '' + b");
-    test_same("var a, b; a + '' + b");
+    test("var a, b; a + b", "var a, b");
+    test("var a, b; 'a' + b", "var a, b");
+    test("var a, b; a + '' + b", "var a, b");
     test("var a, b, c; 'a' + (b === c)", "var a, b, c;");
-    test("var a, b; 'a' + +b", "var a, b; '' + +b"); // can be improved to "var a, b; +b"
-    test_same("var a, b; a + ('' + b)");
-    test("var a, b, c; a + ('' + (b === c))", "var a, b, c; a + ''");
+    test("var a, b; 'a' + +b", "var a, b");
+    test("var a, b; a + ('' + b)", "var a, b");
+    test("var a, b, c; a + ('' + (b === c))", "var a, b, c");
 }
 
 #[test]

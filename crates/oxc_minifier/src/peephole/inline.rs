@@ -28,15 +28,27 @@ impl<'a> PeepholeOptimizations {
         let falsy_init = init_constant.as_ref().is_some_and(Self::is_falsy_constant);
         let declaration_in_body_statement_list =
             !declaration_kind.is_var() || Self::is_declaration_in_body_statement_list(ctx);
-        let hoisted_var_value_safe = !declaration_kind.is_var()
-            || Self::is_hoisted_var_value_safe(symbol_id, declaration_in_body_statement_list, ctx);
         let value = if Self::is_for_statement_init(ctx) {
             // for-statement initializers have their value set by the for statement itself.
             None
-        } else if declaration_kind.is_var() && (decl.init.is_none() || !hoisted_var_value_safe) {
+        } else if declaration_kind.is_var()
+            && decl.init.is_some()
+            && !Self::is_hoisted_var_inlineable(
+                decl,
+                symbol_id,
+                declaration_in_body_statement_list,
+                ctx,
+            )
+        {
             // `var` is hoisted: reads before the initializer line see `undefined`.
-            // Skip absent initializers and any initialized declaration whose
-            // safety predicate cannot rule out such a read.
+            // Skip unless the safety predicate proves no such read exists.
+            None
+        } else if declaration_kind.is_var()
+            && decl.init.is_none()
+            && !Self::is_initializer_less_var_value_safe(symbol_id, ctx)
+        {
+            // Script globals and reads through `with` can observe values that
+            // are not represented by resolved write references.
             None
         } else {
             // No initializer hoists to `undefined`; otherwise reuse the constant.
@@ -49,8 +61,7 @@ impl<'a> PeepholeOptimizations {
         } else {
             FreshValueKind::None
         };
-        let implicit_undefined = decl.init.is_none() && hoisted_var_value_safe;
-        ctx.init_value(symbol_id, value, kind, falsy_init, implicit_undefined);
+        ctx.init_value(symbol_id, value, kind, falsy_init, decl.init.is_none());
     }
 
     /// A `ConstantValue` that coerces to `false` (`false`, `0`/`-0`/`NaN`, `""`,
@@ -81,12 +92,14 @@ impl<'a> PeepholeOptimizations {
         false
     }
 
-    /// Predicate for deriving value facts from a hoisted `var`. True when no
-    /// read can observe a value other than the declaration-derived value:
+    /// Predicate for inlining a hoisted `var x = <literal>;`. True when no read
+    /// can observe `x` as its hoisted `undefined`:
     /// - the declarator sits at the current body's top scope and that body is
     ///   still in its declarative prelude;
     /// - the declaration is a direct body statement-list item rather than a
     ///   conditional, loop, or other nested statement position;
+    /// - it has an initializer (initializer-less vars use the simpler predicate
+    ///   below because they are `undefined` both before and after the declaration);
     /// - script-mode top-level vars are excluded (they alias the global object);
     /// - at program scope, if the module loads any other module (`import`,
     ///   `export … from`, `export * from`), skip: a cyclic importer can call
@@ -104,12 +117,16 @@ impl<'a> PeepholeOptimizations {
     /// reader in a function declared *before* the var in source order has
     /// already been visited and won't be inlined. Safe but suboptimal; the
     /// common "flag declared at the top" pattern is unaffected.
-    fn is_hoisted_var_value_safe(
+    fn is_hoisted_var_inlineable(
+        decl: &VariableDeclarator<'a>,
         symbol_id: SymbolId,
         declaration_in_body_statement_list: bool,
         ctx: &TraverseCtx<'a>,
     ) -> bool {
-        if !declaration_in_body_statement_list || Self::is_script_root_scope(ctx) {
+        if decl.init.is_none()
+            || !declaration_in_body_statement_list
+            || Self::is_script_root_scope(ctx)
+        {
             return false;
         }
         // `hoisted_var_inlining_unsafe` is set by a preceding non-declarative
@@ -126,6 +143,24 @@ impl<'a> PeepholeOptimizations {
             return false;
         }
         reads.all(|read| Self::read_crosses_function_boundary(read.scope_id(), frame.scope_id, ctx))
+    }
+
+    /// An initializer-less `var` is `undefined` from scope instantiation onward,
+    /// so initializer ordering and cross-function reads are irrelevant. Exclude
+    /// the two cases that can change the value without a resolved write:
+    /// script-root bindings alias the global object, and a read inside `with`
+    /// may resolve to a property of the binding object at runtime.
+    fn is_initializer_less_var_value_safe(symbol_id: SymbolId, ctx: &TraverseCtx<'a>) -> bool {
+        if Self::is_script_root_scope(ctx) {
+            return false;
+        }
+        let binding_scope_id = ctx.scoping().symbol_scope_id(symbol_id);
+        ctx.scoping().get_resolved_references(symbol_id).all(|reference| {
+            ctx.scoping()
+                .scope_ancestors(reference.scope_id())
+                .take_while(|&scope_id| scope_id != binding_scope_id)
+                .all(|scope_id| !ctx.scoping().scope_flags(scope_id).is_with())
+        })
     }
 
     /// Classify the fresh value an expression creates (a value that cannot alias

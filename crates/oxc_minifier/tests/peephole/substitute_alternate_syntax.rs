@@ -432,19 +432,19 @@ fn test_fold_arrow_function_return() {
 
 #[test]
 fn test_fold_is_typeof_equals_undefined_resolved() {
-    test("var x; v = typeof x !== 'undefined'", "var x; v = x !== void 0");
-    test("var x; v = typeof x != 'undefined'", "var x; v = x !== void 0");
-    test("var x; v = 'undefined' !== typeof x", "var x; v = x !== void 0");
-    test("var x; v = 'undefined' != typeof x", "var x; v = x !== void 0");
+    test("var x; v = typeof x !== 'undefined'", "var x; v = !1");
+    test("var x; v = typeof x != 'undefined'", "var x; v = !1");
+    test("var x; v = 'undefined' !== typeof x", "var x; v = !1");
+    test("var x; v = 'undefined' != typeof x", "var x; v = !1");
 
-    test("var x; v = typeof x === 'undefined'", "var x; v = x === void 0");
-    test("var x; v = typeof x == 'undefined'", "var x; v = x === void 0");
-    test("var x; v = 'undefined' === typeof x", "var x; v = x === void 0");
-    test("var x; v = 'undefined' == typeof x", "var x; v = x === void 0");
+    test("var x; v = typeof x === 'undefined'", "var x; v = !0");
+    test("var x; v = typeof x == 'undefined'", "var x; v = !0");
+    test("var x; v = 'undefined' === typeof x", "var x; v = !0");
+    test("var x; v = 'undefined' == typeof x", "var x; v = !0");
 
     test(
         "var x; function foo() { v = typeof x !== 'undefined' }",
-        "var x; function foo() { v = x !== void 0 }",
+        "var x; function foo() { v = !1 }",
     );
     test(
         "v = typeof x !== 'undefined'; function foo() { var x }",
@@ -477,69 +477,51 @@ fn test_fold_is_typeof_equals_undefined() {
 
 #[test]
 fn test_fold_is_object_and_not_null() {
-    test(
-        "var foo; v = typeof foo === 'object' && foo !== null",
-        "var foo; v = typeof foo == 'object' && !!foo",
-    );
-    test(
-        "var foo; v = typeof foo == 'object' && foo !== null",
-        "var foo; v = typeof foo == 'object' && !!foo",
-    );
-    test(
-        "var foo; v = typeof foo === 'object' && foo != null",
-        "var foo; v = typeof foo == 'object' && !!foo",
-    );
-    test(
-        "var foo; v = typeof foo == 'object' && foo != null",
-        "var foo; v = typeof foo == 'object' && !!foo",
-    );
-    test(
-        "var foo; v = typeof foo !== 'object' || foo === null",
-        "var foo; v = typeof foo != 'object' || !foo",
-    );
-    test(
-        "var foo; v = typeof foo != 'object' || foo === null",
-        "var foo; v = typeof foo != 'object' || !foo",
-    );
-    test(
-        "var foo; v = typeof foo !== 'object' || foo == null",
-        "var foo; v = typeof foo != 'object' || !foo",
-    );
-    test(
-        "var foo; v = typeof foo != 'object' || foo == null",
-        "var foo; v = typeof foo != 'object' || !foo",
-    );
+    test("var foo; v = typeof foo === 'object' && foo !== null", "var foo; v = !1");
+    test("var foo; v = typeof foo == 'object' && foo !== null", "var foo; v = !1");
+    test("var foo; v = typeof foo === 'object' && foo != null", "var foo; v = !1");
+    test("var foo; v = typeof foo == 'object' && foo != null", "var foo; v = !1");
+    test("var foo; v = typeof foo !== 'object' || foo === null", "var foo; v = !0");
+    test("var foo; v = typeof foo != 'object' || foo === null", "var foo; v = !0");
+    test("var foo; v = typeof foo !== 'object' || foo == null", "var foo; v = !0");
+    test("var foo; v = typeof foo != 'object' || foo == null", "var foo; v = !0");
     test(
         "var foo, bar; v = typeof foo === 'object' && foo !== null && bar !== 1",
-        "var foo, bar; v = typeof foo == 'object' && !!foo && bar !== 1",
+        "var foo, bar; v = !1",
     );
     test(
         "var foo, bar; v = bar !== 1 && typeof foo === 'object' && foo !== null",
-        "var foo, bar; v = bar !== 1 && typeof foo == 'object' && !!foo",
+        "var foo, bar; v = !1",
     );
     test(
         "var foo, bar; v = typeof foo === 'object' && foo !== null || bar !== 1",
-        "var foo, bar; v = typeof foo == 'object' && !!foo || bar !== 1",
+        "var foo, bar; v = !0",
     );
     test(
         "var foo, bar; v = bar !== 1 || typeof foo === 'object' && foo !== null",
-        "var foo, bar; v = bar !== 1 || typeof foo == 'object' && !!foo",
+        "var foo, bar; v = !0",
     );
     test(
         "var foo, bar; v = (typeof foo !== 'object' || foo === null) && bar !== 1",
-        "var foo, bar; v = (typeof foo != 'object' || !foo) && bar !== 1",
+        "var foo, bar; v = !0",
     );
     test(
         "var foo, bar; v = bar !== 1 && (typeof foo !== 'object' || foo === null)",
-        "var foo, bar; v = bar !== 1 && (typeof foo != 'object' || !foo)",
+        "var foo, bar; v = !0",
     );
-    test_same("var foo, bar; v = bar !== 1 && typeof foo != 'object' || foo === null");
-    test_same("var foo, bar; v = typeof foo != 'object' || foo === null && bar !== 1");
+    test(
+        "var foo, bar; v = bar !== 1 && typeof foo != 'object' || foo === null",
+        "var foo, bar; v = !0",
+    );
+    test(
+        "var foo, bar; v = typeof foo != 'object' || foo === null && bar !== 1",
+        "var foo, bar; v = !0",
+    );
     test_same("var foo; v = typeof foo.a == 'object' && foo.a !== null"); // cannot be folded because accessing foo.a might have a side effect
     test_same("v = foo !== null && typeof foo == 'object'"); // cannot be folded because accessing foo might have a side effect
     test_same("v = typeof foo == 'object' && foo !== null"); // cannot be folded because accessing foo might have a side effect
-    test_same("var foo, bar; v = typeof foo == 'object' && bar !== null");
-    test_same("var foo; v = typeof foo == 'string' && foo !== null");
+    test("var foo, bar; v = typeof foo == 'object' && bar !== null", "var foo, bar; v = !1");
+    test("var foo; v = typeof foo == 'string' && foo !== null", "var foo; v = !1");
 }
 
 #[test]

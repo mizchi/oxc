@@ -831,9 +831,9 @@ fn fold_optional_chain_on_undefined_var_binding() {
     );
     test("var slot; export function call() { slot?.foo }", "export function call() {}");
 
-    // Keep the implicit value out of general constant folding. Materializing it
-    // as `void 0` grows ordinary reads and causes unrelated output churn.
-    test_same("var slot; export function read() { return slot }");
+    // Constant-driven folds consume the same general `undefined` value. The
+    // provenance flag only prevents textual substitution with `void 0`.
+    test("var slot; export function read() { return slot }", "export function read() {}");
 
     // A resolved write means the binding is not statically undefined.
     test_same(
@@ -841,6 +841,13 @@ fn fold_optional_chain_on_undefined_var_binding() {
     );
     // Script-root `var`s are observable and mutable through the global object.
     test_same_source_type("var slot; function call() { slot?.() } call()", SourceType::script());
+    // A name inside `with` may resolve to a property instead of the local `var`.
+    test_same_source_type(
+        "function call(obj) { var slot; with (obj) slot?.() } call(obj)",
+        SourceType::script(),
+    );
+    // Direct `eval` can assign to the local without a resolved write reference.
+    test_same("export function call() { var slot; eval('slot = fn'); slot?.() }");
 }
 
 #[test]
