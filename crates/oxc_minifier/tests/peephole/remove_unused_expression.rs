@@ -435,6 +435,7 @@ fn test_fold_binary_expression() {
     test("var a, b, c; 'a' + (b === c)", "var a, b, c;");
     test("var a, b; 'a' + +b", "var a, b");
     test("var a, b; a + ('' + b)", "var a, b");
+    test_same("var a; a + ('' + foo())");
     test("var a, b, c; a + ('' + (b === c))", "var a, b, c");
 }
 
