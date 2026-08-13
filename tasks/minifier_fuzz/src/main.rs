@@ -1,7 +1,11 @@
 #![expect(clippy::print_stdout, clippy::print_stderr)]
 use std::{error::Error, path::PathBuf};
 
-use oxc_minifier_fuzz::campaign::{CampaignOptions, CampaignResult, run, save_failure};
+use oxc_minifier_fuzz::{
+    campaign::{CampaignOptions, CampaignResult, run, save_failure},
+    oracle::Oracle,
+    shrink::shrink,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args = pico_args::Arguments::from_env();
@@ -11,6 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mangle = args.contains("--mangle");
+    let no_shrink = args.contains("--no-shrink");
     let options = CampaignOptions {
         start_seed: args.opt_value_from_str("--seed")?.unwrap_or(0),
         iterations: args.opt_value_from_str("--iterations")?.unwrap_or(1_000),
@@ -49,11 +54,29 @@ fn main() -> Result<(), Box<dyn Error>> {
             Ok(())
         }
         CampaignResult::Failed { summary, failure } => {
-            let paths = save_failure(&failure, &save_dir)?;
+            let mut paths = save_failure(&failure, &save_dir)?;
             eprintln!(
                 "semantic mismatch at seed {} after {} checked seeds: {:#?}",
                 failure.seed, summary.checked, failure.comparison
             );
+
+            if !no_shrink {
+                let oracle = Oracle::new(options.timeout_ms);
+                match shrink(&failure.original, mangle, oracle) {
+                    Some(reduction) => {
+                        eprintln!(
+                            "reduced {} lines to {}",
+                            reduction.original_lines, reduction.reduced_lines
+                        );
+                        paths.extend(save_reduction(&reduction, failure.seed, &save_dir)?);
+                    }
+                    // The campaign found the mismatch with the same oracle, so
+                    // this only happens for a program whose behavior is not
+                    // reproducible — worth saying out loud rather than hiding.
+                    None => eprintln!("could not reproduce the mismatch while reducing"),
+                }
+            }
+
             eprintln!("saved failure artifacts:");
             for path in paths {
                 eprintln!("  {}", path.display());
@@ -70,6 +93,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+fn save_reduction(
+    reduction: &oxc_minifier_fuzz::shrink::Reduction,
+    seed: u64,
+    directory: &std::path::Path,
+) -> Result<Vec<PathBuf>, std::io::Error> {
+    let source_path = directory.join(format!("seed-{seed}.reduced.js"));
+    let minified_path = directory.join(format!("seed-{seed}.reduced.min.js"));
+    std::fs::write(&source_path, &reduction.source)?;
+    std::fs::write(&minified_path, &reduction.minified)?;
+    Ok(vec![source_path, minified_path])
+}
+
 fn print_help() {
     println!(
         "oxc_minifier_fuzz\n\n\
@@ -81,6 +116,7 @@ fn print_help() {
            --timeout-ms <N>    VM timeout per program, 1..=4294967295 (default: 100)\n\
            --batch-size <N>    programs per Node.js process, at least 1 (default: 100)\n\
            --mangle            also mangle names (default: compression only)\n\
+           --no-shrink         do not reduce a mismatch before saving it\n\
            --save-dir <PATH>   mismatch artifacts (default: target/minifier-fuzz)\n"
     );
 }

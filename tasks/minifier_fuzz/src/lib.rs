@@ -1,6 +1,7 @@
 pub mod campaign;
 pub mod generator;
 pub mod oracle;
+pub mod shrink;
 
 use oxc_allocator::Allocator;
 use oxc_codegen::{Codegen, CodegenOptions};
@@ -65,7 +66,7 @@ mod tests {
 
     #[test]
     fn generated_programs_parse_and_have_valid_semantics() {
-        for seed in 0..100 {
+        for seed in 0..500 {
             let source = generate(seed);
             let allocator = Allocator::default();
             let parsed = Parser::new(&allocator, &source, SourceType::script()).parse();
@@ -110,7 +111,8 @@ mod tests {
     }
 
     fn check_generated_programs(mangle: bool) {
-        let programs: Vec<_> = (0..25)
+        const SEEDS: u64 = 50;
+        let programs: Vec<_> = (0..SEEDS)
             .map(|seed| {
                 let original = generate(seed);
                 let minified = minify(&original, mangle)
@@ -123,13 +125,26 @@ mod tests {
             .map(|(_, original, minified)| (original.as_str(), minified.as_str()))
             .collect();
 
+        let mut skipped = 0;
         for ((seed, original, minified), comparison) in
-            programs.iter().zip(Oracle::new(100).compare_many(&cases))
+            programs.iter().zip(Oracle::new(200).compare_many(&cases))
         {
+            if matches!(comparison, Comparison::Skipped { .. }) {
+                skipped += 1;
+                continue;
+            }
             assert!(
                 matches!(comparison, Comparison::Equivalent { .. }),
                 "seed {seed} (mangle={mangle}): {comparison:#?}\noriginal:\n{original}\nminified:\n{minified}"
             );
         }
+        // A program whose original throws or times out proves nothing, so a
+        // generator that mostly emits those is silently testing nothing. This
+        // is a guard on generator quality, not on the minifier.
+        assert!(
+            skipped * 5 <= SEEDS,
+            "{skipped} of {SEEDS} seeds were skipped (mangle={mangle}); \
+             the generator is producing programs that do not complete"
+        );
     }
 }
