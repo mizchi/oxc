@@ -111,11 +111,14 @@ export interface TSEnumDeclarationLegacyMembers {
 }
 
 /**
- * A node, as passed to `write`, which only records where the node started for source maps.
+ * A node carrying the locations needed for source mappings.
  *
  * `loc` is not part of Oxc's AST - that records byte spans - but producers such as Acorn add it.
  */
 export interface MappableNode {
   type: string;
-  loc?: { start: Position } | null;
+  name?: unknown;
+  start?: number;
+  end?: number;
+  loc?: { start: Position; end: Position } | null;
 }

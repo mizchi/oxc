@@ -31,17 +31,15 @@ export function emitMappings(state: State, sourceMap: SourceMapGenerator): void 
 
   let line = 1;
   let lineStart = 0;
-  let nextNewline = output.indexOf("\n");
-  if (nextNewline === -1) nextNewline = Infinity;
+  let nextLineStart = findNextLineStart(output, 0);
 
   const { length } = mapOffsets;
   for (let i = 0; i < length; i++) {
     const offset = mapOffsets[i];
-    while (offset > nextNewline) {
+    while (offset >= nextLineStart) {
       line++;
-      lineStart = nextNewline + 1;
-      const next = output.indexOf("\n", lineStart);
-      nextNewline = next === -1 ? Infinity : next;
+      lineStart = nextLineStart;
+      nextLineStart = findNextLineStart(output, lineStart);
     }
 
     generated.line = line;
@@ -53,3 +51,16 @@ export function emitMappings(state: State, sourceMap: SourceMapGenerator): void 
     sourceMap.addMapping(mapping);
   }
 }
+
+/** Find the UTF-16 offset after the next ECMAScript line terminator. */
+function findNextLineStart(output: string, from: number): number {
+  // Let the regexp engine scan long generated lines. A JS `charCodeAt` loop is much slower for
+  // large literals, while `lastIndex` avoids allocating a substring just to start the search at
+  // `from`.
+  NEXT_LINE_TERMINATOR_REGEX.lastIndex = from;
+  const match = NEXT_LINE_TERMINATOR_REGEX.exec(output);
+  return match === null ? Infinity : match.index + match[0].length;
+}
+
+// `\r\n` must be one line terminator, rather than two.
+const NEXT_LINE_TERMINATOR_REGEX = /\r\n|[\r\n\u2028\u2029]/g;

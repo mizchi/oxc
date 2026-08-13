@@ -70,6 +70,10 @@ export class State {
   // means for spacing.
   declare last: Category;
 
+  // Whether the last write ended in `)` or `]`. Only maps builds read this, to mirror Rust's
+  // trailing mapping for a postfix operand before chained punctuation.
+  declare lastWasPostfixClose: boolean;
+
   // `true` between a `writeNoLast` and the write which follows it,
   // i.e. while `last` describes something other than what was written last.
   // Only used in debug builds. See `debugAssertLastFresh`.
@@ -84,6 +88,9 @@ export class State {
   declare mapOffsets: number[] | null;
   declare mapPositions: Position[] | null;
   declare mapNames: (string | undefined)[] | null;
+
+  // Original source text, used to preserve names in source maps when the caller provides it.
+  declare sourceText: string | undefined;
 
   constructor(options: Options) {
     this.output = "";
@@ -124,6 +131,8 @@ export class State {
     // directly would flatten V8's rope representation on every append-then-read (quadratic),
     // which is why the category is tracked rather than derived.
     this.last = CAT_OTHER;
+    this.lastWasPostfixClose = false;
+    this.sourceText = options.sourceText;
 
     // Debug-only fields for checking `last` is correct on both writes and reads
     if (DEBUG) {

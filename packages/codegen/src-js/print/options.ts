@@ -66,6 +66,12 @@ export interface Options {
   ts?: boolean;
 
   /**
+   * Original source text. When present, source-map names preserve the original identifier spelling
+   * and omit redundant names, matching `oxc_codegen`.
+   */
+  sourceText?: string;
+
+  /**
    * If present, source mappings are emitted through it.
    */
   sourceMap?: SourceMapGenerator;

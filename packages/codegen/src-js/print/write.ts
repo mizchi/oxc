@@ -3,9 +3,10 @@
 // These live together because the categories exist only to be stored by `write` -
 // `state.last` records what was written last by category, not the last character itself.
 
-import { debugAssert, typeAssertIs } from "../asserts.ts";
+import { debugAssert } from "../asserts.ts";
 
 import type { MappableNode } from "./types.ts";
+import type { Position } from "./options.ts";
 import type { State } from "../state.ts";
 
 // `state.last` records what was written last, by category, not the last character itself.
@@ -224,6 +225,7 @@ export function write(state: State, code: string, last: Category): void {
   }
 
   state.last = last;
+  updatePostfixClose(state, code);
   state.output += code;
 }
 
@@ -245,6 +247,7 @@ export function writeNoLast(state: State, code: string): void {
     if (code.length > 0) state.lastCharWritten = code[code.length - 1];
   }
 
+  updatePostfixClose(state, code);
   state.output += code;
 }
 
@@ -268,19 +271,10 @@ export function writeWithMap(state: State, code: string, last: Category, node: M
     state.lastCharWritten = code[code.length - 1];
   }
 
-  if (SOURCEMAPS && node.loc != null) {
-    debugAssert(
-      state.mapOffsets !== null && state.mapPositions !== null && state.mapNames !== null,
-      "Source map arrays should exist when source maps are enabled",
-    );
-
-    typeAssertIs<{ name?: string }>(node);
-    state.mapOffsets.push(state.output.length);
-    state.mapPositions.push(node.loc.start);
-    state.mapNames.push(node.name);
-  }
+  recordSourceMapping(state, node, false);
 
   state.last = last;
+  updatePostfixClose(state, code);
   state.output += code;
 }
 
@@ -296,24 +290,211 @@ export function writeWithMap(state: State, code: string, last: Category, node: M
  * @param node - Node this text came from
  */
 export function writeWithMapNoLast(state: State, code: string, node: MappableNode): void {
-  if (SOURCEMAPS && node.loc != null) {
-    debugAssert(
-      state.mapOffsets !== null && state.mapPositions !== null && state.mapNames !== null,
-      "Source map arrays should exist when source maps are enabled",
-    );
-
-    typeAssertIs<{ name?: string }>(node);
-    state.mapOffsets.push(state.output.length);
-    state.mapPositions.push(node.loc.start);
-    state.mapNames.push(node.name);
-  }
+  recordSourceMapping(state, node, false);
 
   if (DEBUG) {
     state.lastIsStale = true;
     if (code.length > 0) state.lastCharWritten = code[code.length - 1];
   }
 
+  updatePostfixClose(state, code);
   state.output += code;
+}
+
+/**
+ * Append `code`, recording a mapping for the last source character in `node` immediately before it.
+ *
+ * Rust uses this for emitted closing delimiters. `loc.end` is exclusive, so its column is moved
+ * back by one UTF-16 code unit to point at the delimiter itself.
+ */
+export function writeWithMapEnd(
+  state: State,
+  code: string,
+  last: Category,
+  node: MappableNode,
+): void {
+  if (DEBUG) {
+    debugAssertCategoryMatches(state, code, last);
+    state.lastIsStale = false;
+    state.lastCharWritten = code[code.length - 1];
+  }
+
+  recordSourceMapping(state, node, 1);
+  state.last = last;
+  updatePostfixClose(state, code);
+  state.output += code;
+}
+
+/** Record a start mapping at the current output position without writing anything. */
+export function markWithMap(state: State, node: MappableNode): void {
+  recordSourceMapping(state, node, false);
+}
+
+/** Record a start mapping without attaching an identifier name. */
+export function markWithMapNoName(state: State, node: MappableNode): void {
+  recordSourceMapping(state, node, 3);
+}
+
+/** Record a mapping for `node.loc.end` at the current output position. */
+export function markWithMapAfter(state: State, node: MappableNode): void {
+  recordSourceMapping(state, node, 2);
+}
+
+/** Record a mapping a fixed number of columns after `node.loc.start`. */
+export function markWithMapAtStartOffset(
+  state: State,
+  node: MappableNode,
+  columnOffset: number,
+): void {
+  if (!SOURCEMAPS || node.loc == null) return;
+  const { start, end } = node.loc;
+  if (start.line === end.line && start.column === end.column) return;
+
+  debugAssert(
+    state.mapOffsets !== null && state.mapPositions !== null && state.mapNames !== null,
+    "Source map arrays should exist when source maps are enabled",
+  );
+  const position = { line: start.line, column: start.column + columnOffset };
+  if (isDuplicateSourceMapping(state.mapPositions, position)) return;
+
+  state.mapOffsets.push(state.output.length);
+  state.mapPositions.push(position);
+  state.mapNames.push(undefined);
+}
+
+/** Record one mapping, if source maps and a non-empty location are available. */
+function recordSourceMapping(state: State, node: MappableNode, location: false | 1 | 2 | 3): void {
+  if (!SOURCEMAPS || node.loc == null) return;
+
+  const { start, end } = node.loc;
+  if (start.line === end.line && start.column === end.column) return;
+
+  debugAssert(
+    state.mapOffsets !== null && state.mapPositions !== null && state.mapNames !== null,
+    "Source map arrays should exist when source maps are enabled",
+  );
+
+  let position: Position;
+  if (location === 1) {
+    debugAssert(end.column > 0, "An end mapping should point at a closing delimiter");
+    position = { line: end.line, column: end.column - 1 };
+  } else if (location === 2) {
+    position = end;
+  } else if (location === false) {
+    position = start;
+  } else {
+    position = start;
+  }
+
+  // `oxc_codegen` suppresses consecutive source positions as it records them. Do this before
+  // recovering a name or retaining the mapping, since member-level marks commonly duplicate keys.
+  if (isDuplicateSourceMapping(state.mapPositions, position)) return;
+
+  let name: string | undefined;
+  if (location === false) {
+    const printedName = typeof node.name === "string" ? node.name : undefined;
+    const { sourceText } = state;
+    if (
+      printedName !== undefined &&
+      sourceText !== undefined &&
+      node.start !== undefined &&
+      node.end !== undefined
+    ) {
+      const originalName = originalNameFromSource(sourceText, node);
+      // A transformed or hand-authored AST can carry ranges unrelated to `sourceText`. Preserve
+      // the existing fallback in that case instead of recording an arbitrary source substring.
+      name =
+        originalName === undefined
+          ? printedName
+          : originalName === printedName
+            ? undefined
+            : originalName;
+    } else {
+      name = printedName;
+    }
+  }
+
+  state.mapOffsets.push(state.output.length);
+  state.mapPositions.push(position);
+  state.mapNames.push(name);
+}
+
+/** Whether `position` repeats the source position of the last recorded mapping. */
+function isDuplicateSourceMapping(mapPositions: Position[], position: Position): boolean {
+  const previous = mapPositions[mapPositions.length - 1];
+  return previous != null && previous.line === position.line && previous.column === position.column;
+}
+
+/** Recover the original identifier spelling from a validated ESTree source range. */
+function originalNameFromSource(sourceText: string, node: MappableNode): string | undefined {
+  const { start, end } = node;
+  if (
+    typeof start !== "number" ||
+    typeof end !== "number" ||
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    start < 0 ||
+    end < start ||
+    end > sourceText.length
+  ) {
+    return undefined;
+  }
+
+  // JSX identifiers admit `-`, which is not an ECMAScript identifier character. Their spans do
+  // not absorb TypeScript annotations, so the ESTree end offset is already exact.
+  if (node.type === "JSXIdentifier") return sourceText.slice(start, end);
+
+  let index = start;
+  if (index < end && sourceText.charCodeAt(index) === 35) index++; // `#` in a private identifier
+
+  while (index < end) {
+    if (sourceText.charCodeAt(index) === 92) {
+      const length = unicodeEscapeLength(sourceText, index, end);
+      if (length === 0) break;
+      index += length;
+      continue;
+    }
+
+    const codePoint = sourceText.codePointAt(index) as number;
+    const char = String.fromCodePoint(codePoint);
+    if (!IDENT_CONTINUE_REGEX.test(char)) break;
+    index += char.length;
+  }
+
+  return sourceText.slice(start, index);
+}
+
+/** Return the UTF-16 length of a `\\u` identifier escape within `end`, or `0` if invalid. */
+function unicodeEscapeLength(sourceText: string, index: number, end: number): number {
+  if (sourceText.charCodeAt(index + 1) !== 117) return 0; // `u`
+
+  const firstHex = index + 2;
+  if (sourceText.charCodeAt(firstHex) === 123) {
+    let cursor = firstHex + 1;
+    const firstDigit = cursor;
+    while (cursor < end && isHexDigit(sourceText.charCodeAt(cursor))) cursor++;
+    return cursor > firstDigit && sourceText.charCodeAt(cursor) === 125 ? cursor - index + 1 : 0;
+  }
+
+  const escapeEnd = firstHex + 4;
+  if (escapeEnd > end) return 0;
+  for (let cursor = firstHex; cursor < escapeEnd; cursor++) {
+    if (!isHexDigit(sourceText.charCodeAt(cursor))) return 0;
+  }
+  return escapeEnd - index;
+}
+
+/** Whether `code` is an ASCII hexadecimal digit. */
+function isHexDigit(code: number): boolean {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 70) || (code >= 97 && code <= 102);
+}
+
+/** Track the final byte category Rust's postfix source-map hook checks, without reading `output`. */
+function updatePostfixClose(state: State, code: string): void {
+  if (SOURCEMAPS && code.length > 0) {
+    const last = code.charCodeAt(code.length - 1);
+    state.lastWasPostfixClose = last === 41 || last === 93; // `)` or `]`
+  }
 }
 
 /**

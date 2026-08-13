@@ -507,8 +507,9 @@ Each of these produced a small perf bump individually, ~10% gain in aggregate.
 
 During printing, a mapped write records only an output _offset_ and the node's original position.
 
-`emitMappings` then walks the output once at the end, counting newlines, to turn those offsets into
-generated line/column. Tracking a line and column throughout would cost every write in every build.
+`emitMappings` then walks the output once at the end, counting ECMAScript line terminators, to turn
+those offsets into generated line/column. Tracking a line and column throughout would cost every write
+in every build.
 
 The `Mapping` objects handed to `addMapping` are reused across calls rather than allocated per mapping.
 
@@ -564,6 +565,7 @@ so that arm can run.
 - `import "m";` versus `import {} from "m";`
 - An absent `with` clause versus an empty `with {}`
 - `assert {...}` versus `with {...}`
+- The span of a `with {...}` clause (only its individual attributes have ESTree locations)
 
 The conformance harness normalizes the Rust AST down to what ESTree can express before printing,
 rather than expecting the JS side to reproduce information it was never given.
@@ -581,10 +583,15 @@ See `Normalize` in `tasks/codegen_conformance/src/lib.rs`.
 
 `oxc-codegen` is tested against all Test262, Acorn-JSX, and TypeScript test cases - about 62,000 fixtures.
 
-Every fixture is printed twice, and the two must agree byte for byte:
+Every fixture is printed three times:
 
-1. In Rust, via the `oxc-codegen-conformance` NAPI addon (`tasks/codegen_conformance`).
-2. In JS, by this package.
+1. In Rust, with a source map, via the `oxc-codegen-conformance` NAPI addon (`tasks/codegen_conformance`).
+2. In JS, through the no-maps build.
+3. In JS, through the separately compiled maps build.
+
+All three generated outputs must agree byte for byte. Every decoded generated/original line, column,
+and optional original name from the maps build must also agree with Rust, including ordering and
+duplicate suppression.
 
 Both sides parse the same source text with the same `SourceType`, derived by the same function,
 so the only thing under test is the printing. Fixtures which do not parse cleanly are skipped,
