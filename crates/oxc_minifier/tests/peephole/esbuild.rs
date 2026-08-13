@@ -1172,7 +1172,7 @@ fn test_minimize_exit_statements() {
         "function x() { if (y) return; function y() { }}",
     );
     test("function x() { if (y) return; let y }", "function x() { if (y) return; let y;}");
-    test("function x() { if (y) return; var y }", "function x() { var y;}");
+    test("function x() { if (y) return; var y }", "function x() { if (!y) var y;}");
     test(
         "function foo() { a = b; if (a) throw a; if (b) c = b; throw c; }",
         "function foo() { throw a = b, a || (b && (c = b), c);}",

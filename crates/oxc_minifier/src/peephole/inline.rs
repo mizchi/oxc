@@ -33,22 +33,17 @@ impl<'a> PeepholeOptimizations {
             None
         } else if declaration_kind.is_var()
             && decl.init.is_some()
-            && !Self::is_hoisted_var_inlineable(
-                decl,
-                symbol_id,
-                declaration_in_body_statement_list,
-                ctx,
-            )
+            && !Self::is_hoisted_var_inlineable(symbol_id, declaration_in_body_statement_list, ctx)
         {
             // `var` is hoisted: reads before the initializer line see `undefined`.
             // Skip unless the safety predicate proves no such read exists.
             None
         } else if declaration_kind.is_var()
             && decl.init.is_none()
-            && !Self::is_initializer_less_var_value_safe(ident, symbol_id, ctx)
+            && !Self::is_initializer_less_module_var(symbol_id, ctx)
         {
-            // Some bindings can have values that are not represented by
-            // resolved write references.
+            // Keep the new fact module-scoped. Script globals alias the global
+            // object, and function-scoped vars have additional runtime cases.
             None
         } else {
             // No initializer hoists to `undefined`; otherwise reuse the constant.
@@ -72,11 +67,10 @@ impl<'a> PeepholeOptimizations {
     /// aliases. Materializing the value as `void 0` can be larger than keeping
     /// the alias and can preempt statement-level single-use substitution.
     fn is_direct_implicit_undefined_alias(init: &Expression<'a>, ctx: &TraverseCtx<'a>) -> bool {
-        let Expression::Identifier(ident) = init.get_inner_expression() else { return false };
-        let Some(symbol_id) = ctx.scoping().get_reference(ident.reference_id()).symbol_id() else {
-            return false;
-        };
-        ctx.state.symbols.value(symbol_id).is_some_and(|value| value.implicit_undefined)
+        init.get_identifier_reference()
+            .and_then(|ident| ctx.scoping().get_reference(ident.reference_id()).symbol_id())
+            .and_then(|symbol_id| ctx.state.symbols.value(symbol_id))
+            .is_some_and(|value| value.implicit_undefined)
     }
 
     /// A `ConstantValue` that coerces to `false` (`false`, `0`/`-0`/`NaN`, `""`,
@@ -133,15 +127,11 @@ impl<'a> PeepholeOptimizations {
     /// already been visited and won't be inlined. Safe but suboptimal; the
     /// common "flag declared at the top" pattern is unaffected.
     fn is_hoisted_var_inlineable(
-        decl: &VariableDeclarator<'a>,
         symbol_id: SymbolId,
         declaration_in_body_statement_list: bool,
         ctx: &TraverseCtx<'a>,
     ) -> bool {
-        if decl.init.is_none()
-            || !declaration_in_body_statement_list
-            || Self::is_script_root_scope(ctx)
-        {
+        if !declaration_in_body_statement_list || Self::is_script_root_scope(ctx) {
             return false;
         }
         // `hoisted_var_inlining_unsafe` is set by a preceding non-declarative
@@ -160,34 +150,12 @@ impl<'a> PeepholeOptimizations {
         reads.all(|read| Self::read_crosses_function_boundary(read.scope_id(), frame.scope_id, ctx))
     }
 
-    /// An initializer-less `var` is `undefined` from scope instantiation onward,
-    /// so initializer ordering and cross-function reads are irrelevant. Exclude
-    /// cases that can have another value without a resolved write: script-root
-    /// bindings alias the global object, `arguments` is implicitly initialized
-    /// in non-arrow functions, and a read inside `with` may resolve to a property
-    /// of the binding object at runtime.
-    fn is_initializer_less_var_value_safe(
-        ident: &BindingIdentifier<'a>,
-        symbol_id: SymbolId,
-        ctx: &TraverseCtx<'a>,
-    ) -> bool {
-        if Self::is_script_root_scope(ctx) {
-            return false;
-        }
-        let binding_scope_id = ctx.scoping().symbol_scope_id(symbol_id);
-        let binding_scope_flags = ctx.scoping().scope_flags(binding_scope_id);
-        if ident.name == "arguments"
-            && binding_scope_flags.is_function()
-            && !binding_scope_flags.is_arrow()
-        {
-            return false;
-        }
-        ctx.scoping().get_resolved_references(symbol_id).all(|reference| {
-            ctx.scoping()
-                .scope_ancestors(reference.scope_id())
-                .take_while(|&scope_id| scope_id != binding_scope_id)
-                .all(|scope_id| !ctx.scoping().scope_flags(scope_id).is_with())
-        })
+    /// An initializer-less module `var` is `undefined` from module
+    /// instantiation onward. Restricting this fact to module scope also avoids
+    /// Script globals and function-scoped runtime bindings such as `arguments`.
+    fn is_initializer_less_module_var(symbol_id: SymbolId, ctx: &TraverseCtx<'a>) -> bool {
+        ctx.source_type().is_module()
+            && ctx.scoping().symbol_scope_id(symbol_id) == ctx.scoping().root_scope_id()
     }
 
     /// Classify the fresh value an expression creates (a value that cannot alias
