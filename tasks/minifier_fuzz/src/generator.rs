@@ -74,6 +74,11 @@ struct Binding {
     /// declared but never read: its value is an engine-produced `Error` whose
     /// message quotes identifiers from the source, which mangling renames.
     readable: bool,
+    /// Whether a nested binding may reuse the name. Only holds for names whose
+    /// value is a plain scalar: shadowing `arr` or `trace` with a number breaks
+    /// every `arr[0]` and `trace.push` inside, and the program throws instead
+    /// of testing anything.
+    shadowable: bool,
 }
 
 struct Scope {
@@ -133,25 +138,25 @@ impl Generator {
             self.declare(name, Kind::Value, true);
         }
         for name in ["obj", "arr", "trace", "thunks", "side", "prim", "str"] {
-            self.declare(name, Kind::Value, false);
+            self.declare_fixed(name, Kind::Value, false);
         }
 
         // Function declarations hoist, so registering them before their bodies
         // exist lets any of them reference any other.
         for index in 0..3 {
-            self.declare(&format!("f{index}"), Kind::Function, false);
+            self.declare_fixed(&format!("f{index}"), Kind::Function, false);
         }
-        self.declare("g0", Kind::Generator, false);
+        self.declare_fixed("g0", Kind::Generator, false);
         // A class binding is *not* hoisted, so it is emitted before the
         // top-level statements and must not be reached from a call made
         // earlier. Nothing in the preamble calls anything.
-        self.declare("C0", Kind::Class, false);
+        self.declare_fixed("C0", Kind::Class, false);
 
         // `nullable` feeds optional chaining. Fixing it per seed lets the
         // minifier constant-fold the chain, which is itself worth checking.
         let nullable = self.pick(&["obj", "null", "undefined"]).to_owned();
         let _ = writeln!(source, "var nullable = {nullable};");
-        self.declare("nullable", Kind::Value, false);
+        self.declare_fixed("nullable", Kind::Value, false);
 
         source.push_str(&self.class_declaration());
         for index in 0..3 {
@@ -192,8 +197,24 @@ impl Generator {
 
     /// Declare in the innermost scope, as `let`, `const` and parameters do.
     fn declare(&mut self, name: &str, kind: Kind, mutable: bool) {
+        self.declare_with(name, kind, mutable, true);
+    }
+
+    /// Declare a name that must never be shadowed, because code elsewhere
+    /// depends on what it holds.
+    fn declare_fixed(&mut self, name: &str, kind: Kind, mutable: bool) {
+        self.declare_with(name, kind, mutable, false);
+    }
+
+    fn declare_with(&mut self, name: &str, kind: Kind, mutable: bool, shadowable: bool) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.bindings.push(Binding { name: name.to_owned(), kind, mutable, readable: true });
+            scope.bindings.push(Binding {
+                name: name.to_owned(),
+                kind,
+                mutable,
+                readable: true,
+                shadowable,
+            });
         }
     }
 
@@ -205,6 +226,7 @@ impl Generator {
                 kind: Kind::Value,
                 mutable: false,
                 readable: false,
+                shadowable: false,
             });
         }
     }
@@ -218,6 +240,7 @@ impl Generator {
                 kind: Kind::Value,
                 mutable,
                 readable: true,
+                shadowable: true,
             });
         }
     }
@@ -235,6 +258,23 @@ impl Generator {
             }
         }
         names
+    }
+
+    /// Name a parameter, reusing an enclosing binding's name half the time.
+    ///
+    /// A parameter is bound when the function is entered, before its body runs,
+    /// so shadowing this way cannot produce a temporal dead zone the way a
+    /// mid-scope `let` would. Reusing a name is the point: with every binding
+    /// uniquely named, no reference can resolve to the wrong one however the
+    /// mangler renames things, and `--mangle` has nothing to catch.
+    fn parameter_name(&mut self, fallback: &str) -> String {
+        if !self.chance(0.5) {
+            return fallback.to_owned();
+        }
+        let shadowable = self.names_where(|binding| {
+            binding.shadowable && binding.kind == Kind::Value && binding.mutable
+        });
+        self.pick_name(&shadowable).unwrap_or_else(|| fallback.to_owned())
     }
 
     /// Pick one of `names`, or fall back to a literal when nothing is in scope.
@@ -280,13 +320,25 @@ impl Generator {
     // ----------------------------------------------------------- declarations
 
     fn function_declaration(&mut self, index: usize) -> String {
+        let first = self.parameter_name("p0");
+        // Two parameters may not share a name in strict mode.
+        let second = {
+            let candidate = self.parameter_name("p1");
+            if candidate == first { "p1".to_owned() } else { candidate }
+        };
         let (parameters, names) = match index {
-            0 => ("p0, p1".to_owned(), vec!["p0", "p1"]),
-            1 => (format!("p0, p1 = {}", self.literal()), vec!["p0", "p1"]),
-            _ => ("...rest".to_owned(), vec!["rest"]),
+            0 => (format!("{first}, {second}"), vec![first, second]),
+            1 => {
+                let literal = self.literal();
+                (format!("{first}, {second} = {literal}"), vec![first, second])
+            }
+            _ => {
+                let rest = self.parameter_name("rest");
+                (format!("...{rest}"), vec![rest])
+            }
         };
         let body = self.in_function_scope(false, |generator| {
-            for name in names {
+            for name in &names {
                 generator.declare(name, Kind::Value, true);
             }
             let mut body = String::from("if (--_calls_ < 0) return 0;\n");
@@ -320,8 +372,10 @@ impl Generator {
         // Each member is its own function, so each gets its own scope: `q0`
         // belongs to `m` alone, and `this` is absent from the static method.
         let getter = self.member_body(true, &[], 2);
-        let setter = self.member_body(true, &["v"], 1);
-        let method = self.member_body(true, &["q0"], 2);
+        let setter_parameter = self.parameter_name("v");
+        let setter = self.member_body(true, std::slice::from_ref(&setter_parameter), 1);
+        let method_parameter = self.parameter_name("q0");
+        let method = self.member_body(true, std::slice::from_ref(&method_parameter), 2);
         let static_method = self.member_body(false, &[], 2);
         format!(
             "class C0 {{\n\
@@ -329,15 +383,15 @@ impl Generator {
              #secret = {private_field};\n\
              constructor(p) {{ if (--_calls_ < 0) {{ this.p = 0; this.q = 0; return; }} trace.push({effect}); this.p = p; this.q = 1; }}\n\
              get g() {{ if (--_calls_ < 0) return 0; return {getter}; }}\n\
-             set g(v) {{ if (--_calls_ < 0) return; this.p = {setter}; }}\n\
-             m(q0) {{ if (--_calls_ < 0) return 0; return {method}; }}\n\
+             set g({setter_parameter}) {{ if (--_calls_ < 0) return; this.p = {setter}; }}\n\
+             m({method_parameter}) {{ if (--_calls_ < 0) return 0; return {method}; }}\n\
              static t() {{ if (--_calls_ < 0) return 0; return {static_method}; }}\n\
              peek() {{ return this.#secret; }}\n\
              }}\n"
         )
     }
 
-    fn member_body(&mut self, has_receiver: bool, parameters: &[&str], depth: usize) -> String {
+    fn member_body(&mut self, has_receiver: bool, parameters: &[String], depth: usize) -> String {
         self.in_function_scope(false, |generator| {
             generator.this_available = has_receiver;
             for parameter in parameters {
@@ -670,9 +724,10 @@ impl Generator {
 
     fn nested_function_declaration(&mut self, depth: usize) -> String {
         let name = self.fresh_closure();
-        self.declare(&name, Kind::Function, false);
+        self.declare_fixed(&name, Kind::Function, false);
+        let parameter = self.parameter_name("p0");
         let body = self.in_function_scope(false, |generator| {
-            generator.declare("p0", Kind::Value, true);
+            generator.declare(&parameter, Kind::Value, true);
             let mut body = String::from("if (--_calls_ < 0) return 0;\n");
             let context = StatementContext { in_function: true, loop_depth: 0 };
             if depth > 0 {
@@ -681,7 +736,7 @@ impl Generator {
             let _ = writeln!(body, "return {};", generator.expression(2));
             body
         });
-        format!("function {name}(p0) {{\n{body}}}\n")
+        format!("function {name}({parameter}) {{\n{body}}}\n")
     }
 
     /// Call every closure captured so far. Closures created in a `let` loop
@@ -863,23 +918,25 @@ impl Generator {
             }
             1 => {
                 let name = self.fresh_closure();
+                let parameter = self.parameter_name("n");
                 let body = self.in_function_scope(false, |generator| {
                     generator.declare(&name, Kind::Function, false);
-                    generator.declare("n", Kind::Value, true);
+                    generator.declare(&parameter, Kind::Value, true);
                     generator.expression(depth - 1)
                 });
                 format!(
-                    "((function {name}(n) {{ if (--_calls_ < 0) return 0; return n > 0 ? {name}(n - 1) : {body}; }})(2))"
+                    "((function {name}({parameter}) {{ if (--_calls_ < 0) return 0; return {parameter} > 0 ? {name}({parameter} - 1) : {body}; }})(2))"
                 )
             }
             _ => {
                 // An arrow keeps the enclosing `this`, so `this.p` stays legal.
+                let parameter = self.parameter_name("n");
                 let body = self.in_function_scope(true, |generator| {
-                    generator.declare("n", Kind::Value, true);
+                    generator.declare(&parameter, Kind::Value, true);
                     generator.expression(depth - 1)
                 });
                 let argument = self.expression(depth - 1);
-                format!("(((n) => {body})({argument}))")
+                format!("((({parameter}) => {body})({argument}))")
             }
         }
     }

@@ -50,6 +50,31 @@ pub fn minify(source: &str, mangle: bool) -> Result<Minified, String> {
     Ok(Minified { code, iterations: result.iterations })
 }
 
+/// Names `source` refers to without declaring them.
+///
+/// Used to keep a reduction faithful: dropping a declaration while keeping its
+/// uses turns them into references to something that is not there, and the
+/// reduced program then fails for a reason the original never had.
+#[must_use]
+pub fn unresolved_names(source: &str) -> Vec<String> {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::script()).parse();
+    if parsed.panicked {
+        return Vec::new();
+    }
+    let semantic = SemanticBuilder::new().build(&parsed.program);
+    let mut names: Vec<String> = semantic
+        .semantic
+        .scoping()
+        .root_unresolved_references()
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// Parse `source` and run semantic analysis over it, reporting either failure.
 ///
 /// Used on the minifier's *output*: code generation that emits something the

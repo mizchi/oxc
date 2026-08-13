@@ -1,6 +1,7 @@
 use crate::{
     minify,
     oracle::{Comparison, Oracle},
+    unresolved_names,
 };
 
 /// Remove lines from `source` for as long as the result stays "interesting".
@@ -102,6 +103,12 @@ pub fn shrink(source: &str, mangle: bool, oracle: Oracle) -> Option<Reduction> {
     if !is_mismatch(source, mangle, oracle) {
         return None;
     }
+    // Removing a declaration but not its uses turns them into references to
+    // something that is not there. The reduced program still misbehaves, but
+    // for a reason the original never had, which sends the reader after the
+    // wrong bug. Reject any candidate that refers to more names than the
+    // program it came from.
+    let allowed = unresolved_names(source);
     let mut rounds = 0;
 
     let reduced = reduce(
@@ -117,6 +124,9 @@ pub fn shrink(source: &str, mangle: bool, oracle: Oracle) -> Option<Reduction> {
             let compilable: Vec<(usize, String)> = candidates
                 .iter()
                 .enumerate()
+                .filter(|(_, candidate)| {
+                    unresolved_names(candidate).iter().all(|name| allowed.contains(name))
+                })
                 .filter_map(|(index, candidate)| {
                     minify(candidate, mangle).ok().map(|minified| (index, minified.code))
                 })
