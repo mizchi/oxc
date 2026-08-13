@@ -1,14 +1,15 @@
 // Shared machinery for the conformance tests.
 //
-// Each test takes one fixture's source text and prints it twice:
+// Each test takes one fixture's source text and prints it three times:
 //
 // 1. In Rust, with `oxc_parser` + `oxc_codegen`, via the `oxc_codegen_conformance` Node addon.
-// 2. In JS, by parsing with `oxc-parser` (the copy in this repo) and printing with this package.
+// 2. In JS without source maps, by parsing with `oxc-parser` and printing with this package.
+// 3. In JS with source maps, through the separately compiled maps-enabled build.
 //
 // The two must agree byte for byte. Both sides are given the same source text and the same `lang`
 // and `sourceType`, and the addon derives its `SourceType` with `oxc_napi::get_source_type` -
 // the same function `oxc-parser` uses. So the two printers are handed the same AST and the only
-// thing under test is the printing.
+// things under test are printing and decoded source map positions and names.
 //
 // Fixtures which do not parse cleanly have no AST to print, so the addon returns `null` for them
 // and the test is reported as skipped rather than passing quietly.
@@ -19,6 +20,9 @@ import { parseSync } from "oxc-parser";
 import { expect } from "vitest";
 
 import { printSync } from "../../dist/index.js";
+
+import type { Mapping, Position, SourceMapGenerator } from "../../dist/index.js";
+import type { Program } from "oxc-parser";
 
 export const ROOT_DIR_PATH = pathJoin(import.meta.dirname, "../../../..");
 
@@ -43,6 +47,88 @@ export type SourceTypeOption = "script" | "module" | "unambiguous";
 // parenthesis from precedence. The two are different code paths through the printer,
 // so both are worth checking.
 const PRESERVE_PARENS_MODES = [false, true];
+
+/** One decoded source map token, using the zero-based positions `oxc_sourcemap` exposes. */
+interface SourceMapToken {
+  generatedLine: number;
+  generatedColumn: number;
+  originalLine: number;
+  originalColumn: number;
+  name?: string;
+}
+
+/** Collect source mappings in the same decoded form returned by the Rust reference addon. */
+class SourceMapCollector implements SourceMapGenerator {
+  file: string;
+  mappings: SourceMapToken[] = [];
+
+  constructor(file: string) {
+    this.file = file;
+  }
+
+  addMapping(mapping: Mapping): void {
+    const token: SourceMapToken = {
+      generatedLine: mapping.generated.line - 1,
+      generatedColumn: mapping.generated.column,
+      originalLine: mapping.original.line - 1,
+      originalColumn: mapping.original.column,
+    };
+    if (mapping.name !== undefined) token.name = mapping.name;
+    this.mappings.push(token);
+  }
+}
+
+/**
+ * Add ESTree `loc` data to every AST node from its UTF-16 `start` / `end` offsets.
+ *
+ * `oxc-parser` deliberately does not materialize `loc`; the JavaScript code generator accepts ASTs
+ * from parsers which do. Source maps therefore need the same positions synthesized for conformance.
+ */
+export function addSourceLocations(program: Program, sourceText: string): void {
+  const lineStarts = [0];
+  for (let index = 0; index < sourceText.length; index++) {
+    const char = sourceText.charCodeAt(index);
+    if (char === 13 && sourceText.charCodeAt(index + 1) === 10) {
+      lineStarts.push(++index + 1);
+    } else if (char === 10 || char === 13 || char === 0x2028 || char === 0x2029) {
+      lineStarts.push(index + 1);
+    }
+  }
+
+  const positionAt = (offset: number): Position => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >> 1;
+      if (lineStarts[middle] <= offset) low = middle;
+      else high = middle - 1;
+    }
+    return { line: low + 1, column: offset - lineStarts[low] };
+  };
+
+  const seen = new Set<object>();
+  const stack: unknown[] = [program];
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (value === null || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      for (const child of value) stack.push(child);
+      continue;
+    }
+
+    const node = value as Record<string, unknown>;
+    if (typeof node.type === "string" && typeof node.start === "number") {
+      node.loc = { start: positionAt(node.start), end: positionAt(node.end as number) };
+    }
+    for (const key in node) {
+      if (key === "loc" || key === "parent") continue;
+      const child = node[key];
+      if (child !== null && typeof child === "object") stack.push(child);
+    }
+  }
+}
 
 /**
  * Check this package prints a fixture exactly as Rust `oxc_codegen` does.
@@ -98,7 +184,19 @@ export function checkFixture(
     expect(errors, "Rust parsed this fixture cleanly but `oxc-parser` did not").toEqual([]);
 
     const actual = printSync(program, { ts, jsx });
-    expect(actual, `preserveParens: ${preserveParens}`).toBe(expected);
+    expect(actual, `preserveParens: ${preserveParens}`).toBe(expected.code);
+
+    // Source maps use the maps-enabled build, which is compiled separately from the normal
+    // printer. Compare both its code and every decoded mapping against Rust.
+    addSourceLocations(program, sourceText);
+    const sourceMap = new SourceMapCollector(filename);
+    const actualWithSourceMap = printSync(program, { ts, jsx, sourceMap, sourceText });
+    expect(actualWithSourceMap, `preserveParens: ${preserveParens}, sourceMap: code`).toBe(
+      expected.code,
+    );
+    expect(sourceMap.mappings, `preserveParens: ${preserveParens}, sourceMap: mappings`).toEqual(
+      expected.mappings,
+    );
     checked = true;
   }
 

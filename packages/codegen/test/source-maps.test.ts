@@ -1,9 +1,9 @@
 // Source map tests.
 //
-// Source maps are the one part of the printer whose output is not the printed code, so the
-// conformance suites say nothing about them. These check the mappings a print emits are
-// self-consistent and point where they claim to, and that turning source maps on does not change
-// the code that comes out.
+// The conformance checker compares every decoded mapping position against Rust `oxc_codegen`.
+// The remaining tests here check invariants which give a more local failure than a full mapping
+// diff: positions stay in bounds and ordered, indentation is respected, identifier text agrees,
+// and turning source maps on does not change the generated code.
 //
 // `oxc-parser` emits no `loc`, so it is synthesized here from `start` / `end` offsets.
 
@@ -13,9 +13,10 @@ import { parseSync } from "oxc-parser";
 import { beforeAll, describe, expect, test } from "vitest";
 
 import { printSync } from "../dist/index.js";
+import { addSourceLocations, checkFixture } from "./utils/common.ts";
 
 import type { Program } from "oxc-parser";
-import type { Mapping, Position, SourceMapGenerator } from "../dist/index.js";
+import type { Mapping, SourceMapGenerator } from "../dist/index.js";
 
 // Same directory the benchmarks download their fixtures to. Whichever are already cached are used;
 // the inline fixtures below always run.
@@ -73,6 +74,41 @@ namespace NS {
 export default NS;
 `;
 
+describe("Rust conformance", () => {
+  test.each([
+    { name: "inline.js", code: INLINE_JS, lang: "js" as const },
+    { name: "inline.ts", code: INLINE_TS, lang: "ts" as const },
+    {
+      name: "unicode.js",
+      code: 'const smile = "😀";\r\nconst café = `first\u2028second`;\nsmile + café;',
+      lang: "js" as const,
+    },
+    {
+      name: "escaped-name.js",
+      code: "const \\u0061 = 1; \\u0061;",
+      lang: "js" as const,
+    },
+  ])("$name mappings match oxc_codegen", ({ name, code, lang }) => {
+    expect(checkFixture(name, code, lang, "module")).toBe(true);
+  });
+
+  test("invalid source ranges fall back to the printed name", () => {
+    const code = "const name = 0;";
+    const program = parseWithLocs("invalid-range.js", code);
+    const statement = program.body[0];
+    if (statement.type !== "VariableDeclaration") throw new Error("Expected variable declaration");
+    const identifier = statement.declarations[0].id;
+    if (identifier.type !== "Identifier") throw new Error("Expected identifier");
+
+    // Simulate a transformed AST whose old range is no longer valid for the supplied source text.
+    identifier.end = code.length + 1;
+
+    const sourceMap = new Collector("invalid-range.js");
+    printSync(program, { sourceMap, sourceText: code });
+    expect(sourceMap.mappings).toContainEqual(expect.objectContaining({ name: "name" }));
+  });
+});
+
 interface Fixture {
   name: string;
   /** Source text, or `null` if the fixture is a cached file which has not been downloaded */
@@ -107,59 +143,6 @@ const FIXTURES: Fixture[] = [
 ];
 
 // --- Helpers --------------------------------------------------------------------------------
-
-/**
- * Build a function converting a source offset to a line and column.
- *
- * @param source - Source text
- * @returns Function taking an offset and returning a 1-based line and 0-based column
- */
-function lineColTable(source: string): (offset: number) => Position {
-  const lineStarts = [0];
-  for (let i = 0; i < source.length; i++) {
-    if (source.charCodeAt(i) === 10) lineStarts.push(i + 1);
-  }
-  return (offset) => {
-    let lo = 0,
-      hi = lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (lineStarts[mid] <= offset) lo = mid;
-      else hi = mid - 1;
-    }
-    return { line: lo + 1, column: offset - lineStarts[lo] };
-  };
-}
-
-/**
- * Add a `loc` to every node in the AST, computed from its `start` / `end` offsets.
- *
- * @param root - AST to walk
- * @param posOf - Function converting an offset to a line and column
- */
-function addLocs(root: object, posOf: (offset: number) => Position): void {
-  const seen = new Set<object>();
-  const stack: unknown[] = [root];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    if (node === null || typeof node !== "object") continue;
-    if (seen.has(node)) continue;
-    seen.add(node);
-    if (Array.isArray(node)) {
-      for (const child of node) stack.push(child);
-      continue;
-    }
-    const record = node as Record<string, unknown>;
-    if (typeof record.type === "string" && typeof record.start === "number") {
-      record.loc = { start: posOf(record.start), end: posOf(record.end as number) };
-    }
-    for (const key in record) {
-      if (key === "loc" || key === "parent") continue;
-      const child = record[key];
-      if (child !== null && typeof child === "object") stack.push(child);
-    }
-  }
-}
 
 /** A mapping, copied out of the `Mapping` object the printer reuses across calls. */
 interface Recorded {
@@ -203,7 +186,7 @@ class Collector implements SourceMapGenerator {
 function parseWithLocs(name: string, code: string): Program {
   const { program, errors } = parseSync(name, code, PARSE_OPTIONS);
   if (errors.length > 0) throw new Error(`parse ${name}: ${errors[0].message}`);
-  addLocs(program, lineColTable(code));
+  addSourceLocations(program, code);
   return program;
 }
 

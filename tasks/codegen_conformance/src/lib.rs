@@ -2,14 +2,18 @@
 //!
 //! This is the reference the `oxc-codegen` package's conformance tests are checked against.
 //! For each fixture, the tests parse the source twice - once here in Rust, and once with `oxc-parser`
-//! on the JS side - and require both printers to produce the same output.
+//! on the JS side - and require both printers to produce the same output and decoded source map
+//! positions.
 //!
 //! Both sides are given the same source text and the same `SourceType`, via [`oxc_napi::get_source_type`],
 //! which is the same function `oxc-parser` itself uses to turn a filename and `lang` / `sourceType` options
-//! into a `SourceType`. So the ASTs the two printers are handed are the same AST, and the only thing
-//! under test is the printing.
+//! into a `SourceType`. So the ASTs the two printers are handed are the same AST, and the only things
+//! under test are printing and source map generation.
 
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    path::PathBuf,
+};
 
 use napi_derive::napi;
 
@@ -39,7 +43,30 @@ pub struct Options {
     pub preserve_parens: Option<bool>,
 }
 
-/// Parse `source_text` with `oxc_parser` and print the AST with `oxc_codegen`.
+/// Generated code and its source mappings.
+#[napi(object)]
+pub struct CodegenResult {
+    /// Generated source text.
+    pub code: String,
+    /// Decoded source map tokens, in the order emitted by `oxc_codegen`.
+    pub mappings: Vec<SourceMapToken>,
+}
+
+/// One decoded source map token.
+///
+/// Lines and columns are zero-based, matching `oxc_sourcemap`.
+#[napi(object)]
+pub struct SourceMapToken {
+    pub generated_line: u32,
+    pub generated_column: u32,
+    pub original_line: u32,
+    pub original_column: u32,
+    /// Original identifier spelling when `oxc_codegen` records one.
+    pub name: Option<String>,
+}
+
+/// Parse `source_text` with `oxc_parser` and print the AST with `oxc_codegen`, including a source
+/// map.
 ///
 /// Returns `null` if the source text could not be parsed without errors, which tells the caller
 /// there is nothing to compare for this fixture.
@@ -57,7 +84,7 @@ pub fn codegen(
     filename: String,
     source_text: String,
     options: Option<Options>,
-) -> napi::Result<Option<String>> {
+) -> napi::Result<Option<CodegenResult>> {
     let options =
         options.unwrap_or(Options { lang: None, source_type: None, preserve_parens: None });
 
@@ -82,7 +109,7 @@ fn codegen_impl(
     lang: Option<&str>,
     source_type_option: Option<&str>,
     preserve_parens: bool,
-) -> Option<String> {
+) -> Option<CodegenResult> {
     let source_type = get_source_type(filename, lang, source_type_option);
 
     let allocator = Allocator::default();
@@ -105,9 +132,25 @@ fn codegen_impl(
     let mut program = ret.program;
     Normalize { preserve_parens }.visit_program(&mut program);
 
-    let codegen_options =
-        CodegenOptions { comments: CommentOptions::disabled(), ..CodegenOptions::default() };
-    Some(Codegen::new().with_options(codegen_options).build(&program).code)
+    let codegen_options = CodegenOptions {
+        comments: CommentOptions::disabled(),
+        source_map_path: Some(PathBuf::from(filename)),
+        ..CodegenOptions::default()
+    };
+    let ret = Codegen::new().with_options(codegen_options).build(&program);
+    let map = ret.map.expect("source map generation was enabled");
+    let mappings = map
+        .get_source_view_tokens()
+        .map(|token| SourceMapToken {
+            generated_line: token.get_dst_line(),
+            generated_column: token.get_dst_col(),
+            original_line: token.get_src_line(),
+            original_column: token.get_src_col(),
+            name: token.get_name().map(ToOwned::to_owned),
+        })
+        .collect();
+
+    Some(CodegenResult { code: ret.code, mappings })
 }
 
 /// Erases the parts of Oxc's AST which its own ESTree representation cannot carry.
@@ -180,7 +223,11 @@ fn normalize_with_clause(
     if let Some(inner) = with_clause {
         inner.keyword = WithClauseKeyword::With;
 
-        if inner.with_entries.is_empty() {
+        if let Some(first) = inner.with_entries.first() {
+            // ESTree exposes the entries but not the `WithClause` wrapper or its `{` span. Use the
+            // first location both representations can carry as the clause's mapping anchor.
+            inner.span.start = first.span.start;
+        } else {
             *with_clause = None;
         }
     }
