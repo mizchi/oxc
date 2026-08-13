@@ -6,10 +6,28 @@ use std::{
 use serde::Serialize;
 
 use crate::{
-    generator::generate,
-    minify,
+    context, generator, minify,
     oracle::{Comparison, Oracle},
 };
+
+/// Which generator a campaign draws its programs from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Shape {
+    /// Whole programs, in the manner of Terser's ufuzz.
+    #[default]
+    Program,
+    /// One binding pattern evaluated in every context that accepts it.
+    Contexts,
+}
+
+impl Shape {
+    fn generate(self, seed: u64) -> String {
+        match self {
+            Self::Program => generator::generate(seed),
+            Self::Contexts => context::generate(seed),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CampaignOptions {
@@ -18,6 +36,7 @@ pub struct CampaignOptions {
     pub timeout_ms: u64,
     pub batch_size: usize,
     pub mangle: bool,
+    pub shape: Shape,
 }
 
 impl CampaignOptions {
@@ -106,7 +125,7 @@ pub fn run(options: &CampaignOptions) -> CampaignResult {
         let capacity = usize::try_from(batch_end - batch_start).unwrap_or(batch_size);
         let mut programs = Vec::with_capacity(capacity);
         for seed in batch_start..batch_end {
-            let original = generate(seed);
+            let original = options.shape.generate(seed);
             let minified = match minify(&original, options.mangle) {
                 Ok(minified) => minified,
                 Err(message) => {
@@ -176,7 +195,7 @@ pub fn save_failure(failure: &Failure, directory: &Path) -> io::Result<Vec<PathB
 
 #[cfg(test)]
 mod tests {
-    use super::{CampaignOptions, CampaignResult, run};
+    use super::{CampaignOptions, CampaignResult, Shape, run};
 
     #[test]
     fn rejects_timeout_outside_node_range() {
@@ -223,6 +242,7 @@ mod tests {
             timeout_ms: 100,
             batch_size: 10,
             mangle: false,
+            shape: Shape::default(),
         }
     }
 

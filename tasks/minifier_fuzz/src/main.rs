@@ -2,7 +2,7 @@
 use std::{error::Error, path::PathBuf};
 
 use oxc_minifier_fuzz::{
-    campaign::{CampaignOptions, CampaignResult, run, save_failure},
+    campaign::{CampaignOptions, CampaignResult, Shape, run, save_failure},
     corpus,
     invariants::{self, InvariantOptions},
     oracle::Oracle,
@@ -20,12 +20,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let no_shrink = args.contains("--no-shrink");
     let invariants_only = args.contains("--invariants");
     let corpus_only = args.contains("--corpus");
+    let shape = if args.contains("--contexts") { Shape::Contexts } else { Shape::Program };
     let options = CampaignOptions {
         start_seed: args.opt_value_from_str("--seed")?.unwrap_or(0),
         iterations: args.opt_value_from_str("--iterations")?.unwrap_or(1_000),
         timeout_ms: args.opt_value_from_str("--timeout-ms")?.unwrap_or(100),
         batch_size: args.opt_value_from_str("--batch-size")?.unwrap_or(100),
         mangle,
+        shape,
     };
     let save_dir: PathBuf = args
         .opt_value_from_os_str("--save-dir", |value| Ok::<_, &'static str>(PathBuf::from(value)))?
@@ -178,6 +180,8 @@ fn print_help() {
            --batch-size <N>    programs per Node.js process, at least 1 (default: 100)\n\
            --mangle            also mangle names (default: compression only)\n\
            --no-shrink         do not reduce a mismatch before saving it\n\
+           --contexts          generate one binding pattern per seed and bind it\n\
+                               in every context that accepts it\n\
            --corpus            run Terser's compress test suite through the\n\
                                minifier instead of generated programs\n\
            --invariants        skip Node.js: only check that the output parses,\n\
