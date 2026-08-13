@@ -83,8 +83,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match shrink(&failure.original, mangle, oracle) {
                     Some(reduction) => {
                         eprintln!(
-                            "reduced {} lines to {}",
-                            reduction.original_lines, reduction.reduced_lines
+                            "reduced {} lines to {}{}",
+                            reduction.original_lines,
+                            reduction.reduced_lines,
+                            if reduction.converged {
+                                ""
+                            } else {
+                                " (stopped on the round budget, not minimal)"
+                            }
                         );
                         paths.extend(save_reduction(&reduction, failure.seed, &save_dir)?);
                     }
