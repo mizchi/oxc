@@ -1,5 +1,6 @@
 pub mod campaign;
 pub mod generator;
+pub mod invariants;
 pub mod oracle;
 pub mod shrink;
 
@@ -7,6 +8,7 @@ use oxc_allocator::Allocator;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_minifier::{CompressOptions, MangleOptions, Minifier, MinifierOptions};
 use oxc_parser::Parser;
+use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 
 #[derive(Debug, Clone)]
@@ -43,6 +45,29 @@ pub fn minify(source: &str, mangle: bool) -> Result<Minified, String> {
         .build(&program)
         .code;
     Ok(Minified { code, iterations: result.iterations })
+}
+
+/// Parse `source` and run semantic analysis over it, reporting either failure.
+///
+/// Used on the minifier's *output*: code generation that emits something the
+/// parser rejects, or that binds names inconsistently, is a defect no runtime
+/// comparison would ever reach.
+///
+/// # Errors
+///
+/// Returns a message describing the parse or semantic diagnostics.
+pub fn check_syntax_and_semantics(source: &str) -> Result<(), String> {
+    let allocator = Allocator::default();
+    let parsed = Parser::new(&allocator, source, SourceType::script()).parse();
+    if parsed.panicked || !parsed.diagnostics.is_empty() {
+        return Err(format!("does not parse: {:?}", parsed.diagnostics));
+    }
+    let semantic = SemanticBuilder::new().build(&parsed.program);
+    if semantic.diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("fails semantic analysis: {:?}", semantic.diagnostics))
+    }
 }
 
 #[cfg(test)]
@@ -98,6 +123,20 @@ mod tests {
             oracle.compare("for (;;) {}", "console.log(1)"),
             Comparison::Skipped { .. }
         ));
+    }
+
+    /// `s += s` in a loop doubles a string, so a program can produce hundreds
+    /// of megabytes of output in a few dozen cheap iterations. Encoding that
+    /// verbatim overflows the maximum string length once a batch is
+    /// serialised, which takes down the whole campaign rather than one seed.
+    #[test]
+    fn oracle_handles_programs_with_enormous_output() {
+        let huge = "var s = 'x'; for (var i = 0; i < 24; i++) s += s; console.log(s, [s, s]);";
+        let different = "var s = 'y'; for (var i = 0; i < 24; i++) s += s; console.log(s, [s, s]);";
+        let oracle = Oracle::new(5_000);
+        assert!(matches!(oracle.compare(huge, huge), Comparison::Equivalent { .. }));
+        // Summarising must not make two different large values look equal.
+        assert!(matches!(oracle.compare(huge, different), Comparison::Mismatch { .. }));
     }
 
     #[test]

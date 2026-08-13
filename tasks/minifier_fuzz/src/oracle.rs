@@ -9,6 +9,19 @@ use serde_json::Value;
 const NODE_RUNNER: &str = r#"
 const vm = require("node:vm");
 
+// A generated program can build a very large value cheaply -- `s += s` inside a
+// loop doubles a string every iteration -- and encoding it whole overflows the
+// maximum string length when a batch is serialised. Large values are summarised
+// instead: the summary keeps the size and the edges, which two genuinely
+// different values essentially never agree on at once.
+const MAX_STRING = 256;
+const MAX_ITEMS = 512;
+
+function encodeString(type, value) {
+  if (value.length <= MAX_STRING) return [type, value];
+  return [type + ":long", value.length, value.slice(0, 64), value.slice(-64)];
+}
+
 function encode(value, seen = new Map()) {
   if (value === undefined) return ["undefined"];
   if (value === null) return ["null"];
@@ -19,10 +32,9 @@ function encode(value, seen = new Map()) {
     if (value === -Infinity) return ["number", "-Infinity"];
     return ["number", String(value)];
   }
-  if (typeof value === "string" || typeof value === "boolean") {
-    return [typeof value, value];
-  }
-  if (typeof value === "bigint") return ["bigint", String(value)];
+  if (typeof value === "string") return encodeString("string", value);
+  if (typeof value === "boolean") return ["boolean", value];
+  if (typeof value === "bigint") return encodeString("bigint", String(value));
   if (typeof value === "symbol") return ["symbol", value.description ?? null];
   if (typeof value === "function") return ["function"];
 
@@ -31,15 +43,14 @@ function encode(value, seen = new Map()) {
   seen.set(value, id);
   if (Array.isArray(value)) {
     const items = [];
-    for (let index = 0; index < value.length; index++) {
+    for (let index = 0; index < Math.min(value.length, MAX_ITEMS); index++) {
       items.push(Object.hasOwn(value, index) ? encode(value[index], seen) : ["hole"]);
     }
-    return ["array", id, items];
+    return ["array", id, value.length, items];
   }
-  const entries = Object.keys(value)
-    .sort()
-    .map(key => [key, encode(value[key], seen)]);
-  return ["object", id, entries];
+  const keys = Object.keys(value).sort();
+  const entries = keys.slice(0, MAX_ITEMS).map(key => [key, encode(value[key], seen)]);
+  return ["object", id, keys.length, entries];
 }
 
 function execute(source, timeout) {

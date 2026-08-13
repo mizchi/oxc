@@ -3,6 +3,7 @@ use std::{error::Error, path::PathBuf};
 
 use oxc_minifier_fuzz::{
     campaign::{CampaignOptions, CampaignResult, run, save_failure},
+    invariants::{self, InvariantOptions},
     oracle::Oracle,
     shrink::shrink,
 };
@@ -16,6 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mangle = args.contains("--mangle");
     let no_shrink = args.contains("--no-shrink");
+    let invariants_only = args.contains("--invariants");
     let options = CampaignOptions {
         start_seed: args.opt_value_from_str("--seed")?.unwrap_or(0),
         iterations: args.opt_value_from_str("--iterations")?.unwrap_or(1_000),
@@ -31,6 +33,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(format!("unexpected arguments: {remaining:?}").into());
     }
     options.validate()?;
+
+    if invariants_only {
+        return run_invariants(&InvariantOptions {
+            start_seed: options.start_seed,
+            iterations: options.iterations,
+            mangle,
+        });
+    }
 
     match run(&options) {
         CampaignResult::Completed(summary) => {
@@ -93,6 +103,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+fn run_invariants(options: &InvariantOptions) -> Result<(), Box<dyn Error>> {
+    let summary = invariants::run(options);
+    println!(
+        "checked {} seeds from {}, max minifier iterations {}",
+        summary.checked, options.start_seed, summary.max_iterations
+    );
+    println!(
+        "not a fixed point for {} seeds, {} bytes a second pass would still remove{}",
+        summary.not_idempotent,
+        summary.second_pass_savings,
+        summary
+            .worst_seed
+            .map_or_else(String::new, |(seed, saved)| format!(" (worst: seed {seed}, {saved})"))
+    );
+
+    if summary.violations.is_empty() {
+        return Ok(());
+    }
+    for (seed, violation) in &summary.violations {
+        eprintln!("seed {seed}: {violation:?}");
+    }
+    Err(format!("{} invariant violations", summary.violations.len()).into())
+}
+
 fn save_reduction(
     reduction: &oxc_minifier_fuzz::shrink::Reduction,
     seed: u64,
@@ -117,6 +151,8 @@ fn print_help() {
            --batch-size <N>    programs per Node.js process, at least 1 (default: 100)\n\
            --mangle            also mangle names (default: compression only)\n\
            --no-shrink         do not reduce a mismatch before saving it\n\
+           --invariants        skip Node.js: only check that the output parses,\n\
+                               binds, and is a fixed point of the minifier\n\
            --save-dir <PATH>   mismatch artifacts (default: target/minifier-fuzz)\n"
     );
 }
