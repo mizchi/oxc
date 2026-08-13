@@ -387,6 +387,21 @@ impl<'a> Comments<'a> {
         !self.end_of_line_comments_after(pos).is_empty()
     }
 
+    /// Whether the most recently printed comments strictly between `start` and `end`
+    /// include a line comment — i.e. a pending `line_suffix` that will flush at the
+    /// next line break.
+    ///
+    /// Scans the printed cursor's contiguous tail only (reverse iteration stops at the
+    /// first comment outside the range), so comments printed inside earlier operands
+    /// are never considered.
+    pub fn has_printed_line_comment_in_range(&self, start: u32, end: u32) -> bool {
+        self.printed_comments()
+            .iter()
+            .rev()
+            .take_while(|comment| start < comment.span.start && end > comment.span.end)
+            .any(|comment| comment.is_line())
+    }
+
     /// **Critical method**: Advances the printed cursor by one.
     ///
     /// This MUST be called after formatting each comment to maintain system integrity.

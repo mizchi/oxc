@@ -95,6 +95,39 @@ pub const fn format_leading_comments<'a>(span: Span) -> FormatLeadingComments<'a
     FormatLeadingComments::Node(span)
 }
 
+/// Leading comments of the node at `span`, hoisted above a leading operator
+/// (binary-like chains and intersection types under `experimentalOperatorPosition:
+/// "start"`; union `|` chains apply the same rule with their own mechanism).
+///
+/// Writes only when an own-line comment is pending, keeping it own-line instead of
+/// trailing the operator (`&& `); otherwise same-line comments stay with the operand,
+/// after the operator. Type-cast comments are never hoisted (Prettier's
+/// `hasTypeCastComment` guard) — the cast must stay attached to its parenthesized
+/// target, even when it ends its source line (`b || /** @type {string} */⏎(c)`).
+#[inline]
+pub const fn format_hoisted_leading_comments(span: Span) -> FormatHoistedLeadingComments {
+    FormatHoistedLeadingComments(span)
+}
+
+/// See [`format_hoisted_leading_comments`].
+#[derive(Debug, Copy, Clone)]
+pub struct FormatHoistedLeadingComments(Span);
+
+impl<'a> Format<'a, JsFormatContext<'a>> for FormatHoistedLeadingComments {
+    fn fmt(&self, f: &mut JsFormatter<'_, 'a>) {
+        let hoist = {
+            let comments = f.comments();
+            comments.has_leading_own_line_comment(self.0.start)
+                && !comments
+                    .comments_before_iter(self.0.start)
+                    .any(|comment| comments.is_type_cast_comment(comment))
+        };
+        if hoist {
+            FormatLeadingComments::Node(self.0).fmt(f);
+        }
+    }
+}
+
 /// Formats the leading comments of a node.
 #[derive(Debug, Copy, Clone)]
 pub enum FormatLeadingComments<'a> {

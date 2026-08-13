@@ -3,8 +3,8 @@ use oxc_ast::ast::*;
 use oxc_span::GetSpan;
 
 use crate::{
-    ast_nodes::AstNode, formatter::prelude::*, parentheses::NeedsParentheses, print::FormatWrite,
-    utils::typescript::is_object_like_type, write,
+    ast_nodes::AstNode, format_args, formatter::prelude::*, parentheses::NeedsParentheses,
+    print::FormatWrite, utils::typescript::is_object_like_type, write,
 };
 
 impl<'a> FormatWrite<'a> for AstNode<'a, TSIntersectionType<'a>> {
@@ -19,7 +19,7 @@ fn format_intersection_types<'a>(
     node: &AstNode<'a, ArenaVec<'a, TSType<'a>>>,
     f: &mut JsFormatter<'_, 'a>,
 ) {
-    let last_index = node.len().saturating_sub(1);
+    let operator_leads_break = f.options().operator_position.is_start();
     let mut is_prev_object_like = false;
     let mut is_chain_indented = false;
 
@@ -40,9 +40,24 @@ fn format_intersection_types<'a>(
                     }
                     write!(f, item);
                 });
-                write!(f, soft_line_indent_or_space(&content));
+                if operator_leads_break {
+                    // The hoist keeps own-line comments own-line, like binary-like chains;
+                    // Prettier prints them behind `& `, losing that (and idempotency) —
+                    // a deliberate divergence (see "Known divergences").
+                    write!(
+                        f,
+                        soft_line_indent_or_space(&format_args!(
+                            format_hoisted_leading_comments(item.span()),
+                            "&",
+                            space(),
+                            content
+                        ))
+                    );
+                } else {
+                    write!(f, [space(), "&", soft_line_indent_or_space(&content)]);
+                }
             } else {
-                write!(f, space());
+                write!(f, [space(), "&", space()]);
 
                 if !is_prev_object_like || !is_object_like {
                     // indent if we move from object to non-object or vice versa, otherwise keep inline
@@ -55,11 +70,6 @@ fn format_intersection_types<'a>(
                     write!(f, item);
                 }
             }
-        }
-
-        // Add separator if not the last element
-        if index < last_index {
-            write!(f, [space(), "&"]);
         }
 
         is_prev_object_like = is_object_like;
