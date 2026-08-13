@@ -519,9 +519,14 @@ impl<'a> Codegen<'a> {
     }
 
     #[inline]
-    fn enter_class(&mut self) {
+    fn reserve_class(&mut self) -> ClassId {
         let class_id = self.next_class_id;
         self.next_class_id = ClassId::from_usize(self.next_class_id.index() + 1);
+        class_id
+    }
+
+    #[inline]
+    fn enter_class(&mut self, class_id: ClassId) {
         self.class_stack.push(class_id);
     }
 
