@@ -1,4 +1,5 @@
 pub mod campaign;
+pub mod corpus;
 pub mod generator;
 pub mod invariants;
 pub mod oracle;

@@ -2376,6 +2376,7 @@ name = "oxc_minifier_fuzz"
 version = "0.0.0"
 dependencies = [
  "oxc_allocator",
+ "oxc_ast",
  "oxc_codegen",
  "oxc_minifier",
  "oxc_parser",

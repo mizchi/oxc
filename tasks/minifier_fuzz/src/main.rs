@@ -3,6 +3,7 @@ use std::{error::Error, path::PathBuf};
 
 use oxc_minifier_fuzz::{
     campaign::{CampaignOptions, CampaignResult, run, save_failure},
+    corpus,
     invariants::{self, InvariantOptions},
     oracle::Oracle,
     shrink::shrink,
@@ -18,6 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mangle = args.contains("--mangle");
     let no_shrink = args.contains("--no-shrink");
     let invariants_only = args.contains("--invariants");
+    let corpus_only = args.contains("--corpus");
     let options = CampaignOptions {
         start_seed: args.opt_value_from_str("--seed")?.unwrap_or(0),
         iterations: args.opt_value_from_str("--iterations")?.unwrap_or(1_000),
@@ -33,6 +35,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(format!("unexpected arguments: {remaining:?}").into());
     }
     options.validate()?;
+
+    if corpus_only {
+        return run_corpus(mangle, options.timeout_ms, options.batch_size);
+    }
 
     if invariants_only {
         return run_invariants(&InvariantOptions {
@@ -103,6 +109,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+fn run_corpus(mangle: bool, timeout_ms: u64, batch_size: usize) -> Result<(), Box<dyn Error>> {
+    let root = corpus::ensure_terser_suite()?;
+    let tests = corpus::collect_tests(root)?;
+    println!("{} runnable cases from Terser's compress suite", tests.len());
+
+    let summary = corpus::check(&tests, mangle, timeout_ms, batch_size);
+    println!(
+        "checked {}, skipped {} (do not complete under the sandbox), {} rejected by the parser",
+        summary.checked, summary.skipped, summary.unparsed
+    );
+    if summary.mismatches.is_empty() {
+        return Ok(());
+    }
+    for failure in &summary.mismatches {
+        eprintln!("{}: {}", failure.file, failure.name);
+        eprintln!("  original: {}", failure.source.trim());
+        eprintln!("  minified: {}", failure.minified);
+    }
+    Err(format!("{} behavior mismatches", summary.mismatches.len()).into())
+}
+
 fn run_invariants(options: &InvariantOptions) -> Result<(), Box<dyn Error>> {
     let summary = invariants::run(options);
     println!(
@@ -151,6 +178,8 @@ fn print_help() {
            --batch-size <N>    programs per Node.js process, at least 1 (default: 100)\n\
            --mangle            also mangle names (default: compression only)\n\
            --no-shrink         do not reduce a mismatch before saving it\n\
+           --corpus            run Terser's compress test suite through the\n\
+                               minifier instead of generated programs\n\
            --invariants        skip Node.js: only check that the output parses,\n\
                                binds, and is a fixed point of the minifier\n\
            --save-dir <PATH>   mismatch artifacts (default: target/minifier-fuzz)\n"

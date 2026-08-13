@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 oxc_allocator = { workspace = true }
+oxc_ast = { workspace = true }
 oxc_codegen = { workspace = true }
 oxc_minifier = { workspace = true }
 oxc_parser = { workspace = true }
