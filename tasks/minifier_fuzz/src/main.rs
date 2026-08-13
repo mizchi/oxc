@@ -20,7 +20,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let no_shrink = args.contains("--no-shrink");
     let invariants_only = args.contains("--invariants");
     let corpus_only = args.contains("--corpus");
-    let shape = if args.contains("--contexts") { Shape::Contexts } else { Shape::Program };
+    let shape = if args.contains("--contexts") {
+        Shape::Contexts
+    } else if args.contains("--scopes") {
+        Shape::Scopes
+    } else {
+        Shape::Program
+    };
     let options = CampaignOptions {
         start_seed: args.opt_value_from_str("--seed")?.unwrap_or(0),
         iterations: args.opt_value_from_str("--iterations")?.unwrap_or(1_000),
@@ -47,6 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             start_seed: options.start_seed,
             iterations: options.iterations,
             mangle,
+            shape,
         });
     }
 
@@ -188,6 +195,8 @@ fn print_help() {
            --no-shrink         do not reduce a mismatch before saving it\n\
            --contexts          generate one binding pattern per seed and bind it\n\
                                in every context that accepts it\n\
+           --scopes            reuse a small pool of names down nested scopes,\n\
+                               aimed at the mangler (pair with --mangle)\n\
            --corpus            run Terser's compress test suite through the\n\
                                minifier instead of generated programs\n\
            --invariants        skip Node.js: only check that the output parses,\n\

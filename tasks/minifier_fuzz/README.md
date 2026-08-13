@@ -6,11 +6,13 @@ manual tools — none is wired into CI.
 ```sh
 just fuzz-minifier --seed 0 --iterations 10000    # generated programs
 just fuzz-minifier --contexts --iterations 10000  # one pattern, every context
+just fuzz-minifier --scopes --mangle              # name resolution
 just fuzz-minifier --corpus                       # Terser's compress suite
 just fuzz-minifier --invariants --iterations 200000
 ```
 
-`--mangle` adds name mangling to any of the first three. Without it, a mismatch
+`--mangle` adds name mangling to any of the first four, and `--invariants`
+accepts `--contexts` and `--scopes` too. Without it, a mismatch
 is attributable to compression or code generation rather than to name
 allocation.
 
@@ -57,6 +59,31 @@ assignment, function, arrow, method and class-method parameters, a default
 initialiser, `catch`, and both `for-of` heads — and each context reports what it
 bound. Compression sees a different AST in each, so a pass that gets one wrong
 shows up as that context disagreeing with the other twelve.
+
+## Name resolution
+
+Aimed at the mangler. The program generator above gives every binding a unique
+name, which is the easiest possible input for one: nothing shadows anything, so
+no reference can resolve to the wrong binding however the renaming goes. Running
+it with `--mangle` therefore says very little.
+
+`--scopes` does the opposite. It draws from a pool of three names and reuses
+them down a deep chain of nested scopes, so most names are shadowed several
+times over. Every binding gets a distinct value and every read is logged with
+the name it was written as, so the log says which binding each read resolved to.
+
+It also covers the places where a name is not an ordinary reference, and so must
+not be renamed along with one: shorthand properties, property keys, labels,
+private class fields, `catch` parameters, named function expressions, and the
+scope a direct `eval` can see. A scope of 80 bindings appears too, which pushes
+the name allocator past the 54 single-character identifiers into two-character
+ones — where a generated name can turn out to be a reserved word.
+
+Lexical declarations are emitted at the top of each scope on purpose. `let`,
+`const`, `class` and block-level functions bind their name across the *whole*
+scope rather than from the declaration onwards, so a read placed above one
+throws on the temporal dead zone instead of resolving outward, and a `var` in a
+nested block collides with one introduced later in an enclosing block.
 
 ## Terser's compress suite
 

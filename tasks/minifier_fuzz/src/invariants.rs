@@ -6,13 +6,14 @@
 //! a runtime comparison structurally cannot: output that does not parse compares
 //! as "both threw" and is skipped rather than reported.
 
-use crate::{Minified, check_syntax_and_semantics, generator::generate, minify};
+use crate::{Minified, campaign::Shape, check_syntax_and_semantics, minify};
 
 #[derive(Debug, Clone, Copy)]
 pub struct InvariantOptions {
     pub start_seed: u64,
     pub iterations: u64,
     pub mangle: bool,
+    pub shape: Shape,
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +61,7 @@ pub fn run(options: &InvariantOptions) -> InvariantSummary {
     let end_seed = options.start_seed.saturating_add(options.iterations);
 
     for seed in options.start_seed..end_seed {
-        let source = generate(seed);
+        let source = options.shape.generate(seed);
 
         let first = match minify_caught(&source, options.mangle) {
             Ok(first) => first,
@@ -154,7 +155,12 @@ mod tests {
     const SEEDS: u64 = 3_000;
 
     fn options() -> InvariantOptions {
-        InvariantOptions { start_seed: 0, iterations: SEEDS, mangle: false }
+        InvariantOptions {
+            start_seed: 0,
+            iterations: SEEDS,
+            mangle: false,
+            shape: super::Shape::default(),
+        }
     }
 
     /// Every generated program must minify to code that parses and binds, and

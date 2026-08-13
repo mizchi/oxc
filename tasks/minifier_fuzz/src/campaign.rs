@@ -8,6 +8,7 @@ use serde::Serialize;
 use crate::{
     context, generator, minify,
     oracle::{Comparison, Oracle},
+    scopes,
 };
 
 /// Which generator a campaign draws its programs from.
@@ -18,13 +19,17 @@ pub enum Shape {
     Program,
     /// One binding pattern evaluated in every context that accepts it.
     Contexts,
+    /// A small pool of names reused down nested scopes, aimed at the mangler.
+    Scopes,
 }
 
 impl Shape {
-    fn generate(self, seed: u64) -> String {
+    #[must_use]
+    pub fn generate(self, seed: u64) -> String {
         match self {
             Self::Program => generator::generate(seed),
             Self::Contexts => context::generate(seed),
+            Self::Scopes => scopes::generate(seed),
         }
     }
 }

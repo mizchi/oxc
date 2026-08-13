@@ -4,6 +4,7 @@ pub mod corpus;
 pub mod generator;
 pub mod invariants;
 pub mod oracle;
+pub mod scopes;
 pub mod shrink;
 
 use oxc_allocator::Allocator;
