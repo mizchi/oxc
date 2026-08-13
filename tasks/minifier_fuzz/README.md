@@ -1,6 +1,6 @@
 # Minifier fuzzer
 
-Four ways of asking whether the minifier preserves meaning. All of them are
+Five ways of asking whether the minifier preserves meaning. All of them are
 manual tools — none is wired into CI.
 
 ```sh
@@ -12,9 +12,8 @@ just fuzz-minifier --invariants --iterations 200000
 ```
 
 `--mangle` adds name mangling to any of the first four, and `--invariants`
-accepts `--contexts` and `--scopes` too. Without it, a mismatch
-is attributable to compression or code generation rather than to name
-allocation.
+accepts `--contexts` and `--scopes` too. Without `--mangle`, a mismatch is
+attributable to compression or code generation rather than to name allocation.
 
 ## Generated programs
 
